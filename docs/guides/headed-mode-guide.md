@@ -427,7 +427,7 @@ Pinchtab binds to `127.0.0.1` by default — only accessible from the machine it
 If you need remote access, set `BRIDGE_BIND=0.0.0.0` and **always** pair it with `BRIDGE_TOKEN`:
 
 ```bash
-BRIDGE_BIND=0.0.0.0 BRIDGE_TOKEN=my-secret-token pinchtab dashboard
+BRIDGE_BIND=0.0.0.0 BRIDGE_TOKEN=my-secret-token pinchtab
 ```
 
 Without `BRIDGE_TOKEN`, every request is rejected with `401` — including the dashboard UI itself. There's no "public mode". If you open the bind address, you must set a token. This is by design.

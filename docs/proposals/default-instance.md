@@ -317,7 +317,7 @@ Add flag to enable/disable default instance:
 docker run -e PINCHTAB_DEFAULT_INSTANCE=1 pinchtab:latest
 
 # CLI
-pinchtab dashboard --default-instance
+pinchtab --default-instance
 ```
 
 ---

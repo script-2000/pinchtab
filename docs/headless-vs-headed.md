@@ -93,7 +93,7 @@ curl -X POST http://localhost:9867/instances/launch \
 
 ### Viewing Headed Instances in the Dashboard
 
-The Pinchtab dashboard lets you monitor both headless and headed instances:
+The PinchTab lets you monitor both headless and headed instances:
 
 ![Dashboard showing instances tab with a headed mode instance running](../media/dashboard-instances-headed.png)
 
@@ -394,7 +394,7 @@ Each instance is completely isolated — different profiles, different cookies, 
 
 ## Monitoring Instance Activity
 
-The Pinchtab dashboard includes an Agents tab that shows all activity happening across your instances in real-time:
+The PinchTab dashboard includes an Agents tab that shows all activity happening across your instances in real-time:
 
 ![Dashboard Agents tab showing real-time activity feed of instance operations](../media/dashboard-agents-activity.png)
 

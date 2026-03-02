@@ -1,24 +1,8 @@
 ---
 name: pinchtab
-description: >
-  Control a headless or headed Chrome browser via Pinchtab's HTTP API. Use for web automation,
-  scraping, form filling, navigation, and multi-tab workflows. Pinchtab exposes the accessibility
-  tree as flat JSON with stable refs — optimized for AI agents (low token cost, fast).
-  Use when the task involves: browsing websites, filling forms, clicking buttons, extracting
-  page text, taking screenshots, or any browser-based automation. Requires a running Pinchtab
-  instance (Go binary).
-homepage: https://pinchtab.com
+description: Control a headless or headed Chrome browser via Pinchtab's HTTP API for web automation, scraping, form filling, navigation, screenshots, and extraction with stable accessibility refs.
 metadata:
-  openclaw:
-    emoji: "🦀"
-    requires:
-      bins: ["pinchtab"]
-      env: |
-        BRIDGE_TOKEN (optional, secret) - Bearer auth token for Pinchtab API
-        BRIDGE_PORT (optional) - HTTP port, default 9867
-        BRIDGE_HEADLESS (optional) - true/false for headless Chrome
-        BRIDGE_PROFILE (optional) - Chrome profile directory
-        BRIDGE_BIND (optional) - Bind address, default 127.0.0.1
+  short-description: Browser automation via Pinchtab HTTP API
 ---
 
 # Pinchtab
@@ -71,9 +55,6 @@ BRIDGE_TOKEN="your-secret-token" pinchtab &
 
 # Custom port
 BRIDGE_PORT=8080 pinchtab &
-
-# Dashboard/orchestrator — profile manager + tab launcher
-pinchtab dashboard &
 ```
 
 Default: **port 9867**, no auth required (local). Set `BRIDGE_TOKEN` for remote access.

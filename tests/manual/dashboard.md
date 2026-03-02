@@ -1,4 +1,4 @@
-# Pinchtab Dashboard Test Plan
+# PinchTab Dashboard Test Plan
 
 **Goal:** Validate the dashboard mode — profile management, orchestrator (instance lifecycle), proxy routing, SSE events, and UI serving.
 
@@ -11,9 +11,7 @@
 | # | Scenario | Steps | Expected | Auto |
 |---|----------|-------|----------|------|
 | DH1 | Dashboard health | `GET /health` | 200, `{"status":"ok","mode":"dashboard"}` | ✅ |
-| DH2 | Dashboard UI serves | `GET /dashboard` | 200, HTML with `<html` | ✅ |
-| DH3 | Static assets serve | `GET /dashboard/app.js` | 200, JavaScript content | ✅ |
-| DH4 | Static CSS serves | `GET /dashboard/base.css` | 200, CSS content | ✅ |
+| DH2 | Dashboard UI serves | `GET /` | 200, HTML with `<html` | ✅ |
 
 ---
 

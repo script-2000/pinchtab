@@ -25,13 +25,13 @@ This guide provides manual and automated tests for the complete multi-instance a
 
 ## Prerequisites
 
-- Pinchtab built: `go build -o pinchtab ./cmd/pinchtab`
+- PinchTab built: `go build -o pinchtab ./cmd/pinchtab`
 - Port range available: 9867-9968
 - Chrome/Chromium installed
 
 ## Quick Start Test (Manual)
 
-### 1. Start Pinchtab Dashboard
+### 1. Start PinchTab
 
 ```bash
 ./pinchtab

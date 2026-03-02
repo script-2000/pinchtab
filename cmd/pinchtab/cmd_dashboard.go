@@ -23,14 +23,14 @@ import (
 )
 
 // runDashboard starts a lightweight dashboard server — no Chrome, no bridge.
-// It manages Pinchtab instances via the orchestrator and serves the dashboard UI.
+// It manages PinchTab instances via the orchestrator and serves the dashboard UI.
 func runDashboard(cfg *config.RuntimeConfig) {
 	dashPort := cfg.Port
 	if dashPort == "" {
 		dashPort = "9870"
 	}
 
-	slog.Info("🦀 Pinchtab Dashboard", "port", dashPort)
+	slog.Info("🦀 PinchTab", "port", dashPort)
 
 	profilesDir := filepath.Join(cfg.StateDir, "profiles")
 	if err := os.MkdirAll(profilesDir, 0755); err != nil {
@@ -44,6 +44,14 @@ func runDashboard(cfg *config.RuntimeConfig) {
 	orch.SetProfileManager(profMgr)
 	orch.SetPortRange(cfg.InstancePortStart, cfg.InstancePortEnd)
 	dash.SetInstanceLister(orch)
+
+	// Wire up instance events to SSE broadcast
+	orch.OnEvent(func(evt orchestrator.InstanceEvent) {
+		dash.BroadcastSystemEvent(dashboard.SystemEvent{
+			Type:     evt.Type,
+			Instance: evt.Instance,
+		})
+	})
 
 	mux := http.NewServeMux()
 
@@ -190,7 +198,7 @@ func runDashboard(cfg *config.RuntimeConfig) {
 	// Periodic health check: log tabs and Chrome process info every 30 seconds
 	go periodicHealthCheck(orch)
 
-	slog.Info("dashboard ready", "url", fmt.Sprintf("http://localhost:%s/dashboard", dashPort))
+	slog.Info("dashboard ready", "url", fmt.Sprintf("http://localhost:%s", dashPort))
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		slog.Error("server", "err", err)

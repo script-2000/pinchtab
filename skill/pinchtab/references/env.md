@@ -34,7 +34,7 @@
 | `PINCHTAB_URL` | `http://localhost:9867` | Pinchtab server URL for CLI commands |
 | `PINCHTAB_TOKEN` | (none) | Auth token for CLI (sent as `Authorization: Bearer`) |
 
-## Dashboard mode (`pinchtab dashboard`)
+## Dashboard (`pinchtab`)
 
 | Var | Default | Description |
 |---|---|---|

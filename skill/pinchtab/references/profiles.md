@@ -1,6 +1,6 @@
-# Profile Management (Dashboard Mode)
+# Profile Management
 
-When running `pinchtab dashboard`, profiles are managed via the dashboard API on port 9867.
+When running `pinchtab`, profiles are managed via the dashboard API on port 9867.
 
 ## List profiles
 
@@ -99,7 +99,7 @@ Recommended human + agent flow:
 
 ```bash
 # Human starts dashboard and sets up profile
-pinchtab dashboard
+pinchtab
 
 # Agent resolves the profile endpoint
 PINCHTAB_BASE_URL="$(pinchtab connect <profile-name>)"

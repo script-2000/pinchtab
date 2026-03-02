@@ -21,7 +21,6 @@ func printHelp() {
 
 MODES:
   pinchtab                  Start server (default port 9867)
-  pinchtab dashboard        Start profile manager/orchestrator
   pinchtab connect <name>   Get URL for a running profile
 
 QUICK START (requires running server):
