@@ -3,6 +3,7 @@ package scheduler
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -53,6 +54,8 @@ func sendWebhook(callbackURL string, t *Task) {
 		slog.Warn("webhook: delivery failed", "task", t.ID, "url", callbackURL, "err", err)
 		return
 	}
+	// Drain body so the underlying connection can be reused.
+	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 400 {

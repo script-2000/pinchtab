@@ -58,6 +58,9 @@ type Scheduler struct {
 	live   map[string]*Task
 	liveMu sync.RWMutex
 
+	// webhookSem bounds the number of concurrent webhook delivery goroutines.
+	webhookSem chan struct{}
+
 	// cancellation
 	cancels   map[string]context.CancelFunc
 	cancelsMu sync.Mutex
@@ -89,15 +92,16 @@ func New(cfg Config, resolver InstanceResolver) *Scheduler {
 	}
 
 	return &Scheduler{
-		cfg:      cfg,
-		queue:    NewTaskQueue(cfg.MaxQueueSize, cfg.MaxPerAgent),
-		results:  NewResultStore(cfg.ResultTTL),
-		resolver: resolver,
-		client:   &http.Client{Timeout: 60 * time.Second},
-		metrics:  newMetrics(),
-		live:     make(map[string]*Task),
-		cancels:  make(map[string]context.CancelFunc),
-		stopCh:   make(chan struct{}),
+		cfg:        cfg,
+		queue:      NewTaskQueue(cfg.MaxQueueSize, cfg.MaxPerAgent),
+		results:    NewResultStore(cfg.ResultTTL),
+		resolver:   resolver,
+		client:     &http.Client{Timeout: 60 * time.Second},
+		metrics:    newMetrics(),
+		live:       make(map[string]*Task),
+		cancels:    make(map[string]context.CancelFunc),
+		stopCh:     make(chan struct{}),
+		webhookSem: make(chan struct{}, 16),
 	}
 }
 
@@ -420,7 +424,15 @@ func (s *Scheduler) finishTask(t *Task) {
 
 	// Fire webhook asynchronously if configured.
 	if t.CallbackURL != "" && t.GetState().IsTerminal() {
-		go sendWebhook(t.CallbackURL, t)
+		select {
+		case s.webhookSem <- struct{}{}:
+			go func() {
+				defer func() { <-s.webhookSem }()
+				sendWebhook(t.CallbackURL, t)
+			}()
+		default:
+			slog.Warn("webhook: too many in-flight deliveries, dropping", "task", t.ID)
+		}
 	}
 }
 
