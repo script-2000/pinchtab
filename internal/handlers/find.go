@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/idpi"
 	"github.com/pinchtab/pinchtab/internal/semantic"
 	"github.com/pinchtab/pinchtab/internal/web"
 )
@@ -31,6 +34,7 @@ type findResponse struct {
 	Threshold    float64                 `json:"threshold"`
 	LatencyMs    int64                   `json:"latency_ms"`
 	ElementCount int                     `json:"element_count"`
+	IDPIWarning  string                  `json:"idpiWarning,omitempty"`
 }
 
 // HandleFind performs semantic element matching against the accessibility
@@ -110,6 +114,51 @@ func (h *Handlers) HandleFind(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// IDPI: scan AX-node text corpus and full page body text for injection
+	// patterns before semantic matching. The interactive AX filter omits
+	// non-interactive elements (<p>, headings, etc.), so body.innerText is
+	// fetched as a 3-second sub-operation to cover the full visible page.
+	// In strict mode a detected threat blocks the request (HTTP 403); in
+	// warn mode the response headers and IDPIWarning field carry the advisory.
+	var idpiWarning string
+	if h.Config.IDPI.Enabled && h.Config.IDPI.ScanContent {
+		var sb strings.Builder
+		for _, n := range nodes {
+			if n.Name != "" {
+				sb.WriteString(n.Name)
+				sb.WriteByte('\n')
+			}
+			if n.Value != "" {
+				sb.WriteString(n.Value)
+				sb.WriteByte('\n')
+			}
+		}
+		// Augment with full body text to catch injection in non-interactive
+		// content that the interactive AX filter omits (paragraphs, headings).
+		scanTimeout := time.Duration(h.Config.IDPI.ScanTimeoutSec) * time.Second
+		if scanTimeout <= 0 {
+			scanTimeout = 5 * time.Second
+		}
+		var bodyText string
+		scanCtx, scanCancel := context.WithTimeout(ctxTab, scanTimeout)
+		_ = chromedp.Run(scanCtx, chromedp.Evaluate(`document.body ? document.body.innerText : ""`, &bodyText))
+		scanCancel()
+		sb.WriteString(bodyText)
+		if corpus := sb.String(); corpus != "" {
+			if ir := idpi.ScanContent(corpus, h.Config.IDPI); ir.Threat {
+				if ir.Blocked {
+					web.Error(w, http.StatusForbidden, fmt.Errorf("idpi: %s", ir.Reason))
+					return
+				}
+				w.Header().Set("X-IDPI-Warning", ir.Reason)
+				if ir.Pattern != "" {
+					w.Header().Set("X-IDPI-Pattern", ir.Pattern)
+				}
+				idpiWarning = ir.Reason
+			}
+		}
+	}
+
 	start := time.Now()
 	result, err := h.Matcher.Find(r.Context(), req.Query, descs, semantic.FindOptions{
 		Threshold:       req.Threshold,
@@ -132,6 +181,7 @@ func (h *Handlers) HandleFind(w http.ResponseWriter, r *http.Request) {
 		Threshold:    req.Threshold,
 		LatencyMs:    time.Since(start).Milliseconds(),
 		ElementCount: result.ElementCount,
+		IDPIWarning:  idpiWarning,
 	}
 	if resp.Matches == nil {
 		resp.Matches = []semantic.ElementMatch{}
