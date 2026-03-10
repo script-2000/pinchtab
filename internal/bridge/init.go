@@ -282,9 +282,9 @@ func startChromeWithRecovery(parentCtx context.Context, cfg *config.RuntimeConfi
 			slog.Info("  fedora/rhel: sudo dnf install -y chromium")
 			slog.Info("  arch: sudo pacman -S chromium")
 			slog.Info("  macos: brew install chromium")
-			slog.Info("  or set CHROME_BIN environment variable to chrome binary path")
+			slog.Info("  or set 'binary' in config.json to override the chrome binary path")
 
-			return nil, nil, fmt.Errorf("chrome/chromium not found: please install chrome or chromium, or set CHROME_BIN environment variable")
+			return nil, nil, fmt.Errorf("chrome/chromium not found: please install chrome or chromium, or set 'binary' in config.json")
 		}
 
 		// Startup timeout: Chrome is running but did not announce its DevTools URL via
@@ -346,13 +346,13 @@ func startChromeWithRemoteAllocator(parentCtx context.Context, cfg *config.Runti
 		chromeBinary = findChromeBinary()
 	}
 	if chromeBinary == "" {
-		return nil, nil, fmt.Errorf("chrome/chromium not found: please install chrome or chromium, or set CHROME_BIN environment variable")
+		return nil, nil, fmt.Errorf("chrome/chromium not found: please install chrome or chromium, or set 'binary' in config.json")
 	}
 
 	args := buildChromeArgs(cfg, debugPort)
 	slog.Debug("launching chrome directly", "binary", chromeBinary, "port", debugPort, "args", args)
 
-	// #nosec G204 -- chromeBinary from CHROME_BIN env var, user config, or findChromeBinary() known system paths
+	// #nosec G204 -- chromeBinary from user config or findChromeBinary() known system paths
 	cmd := exec.Command(chromeBinary, args...)
 	cmd.Stdout = newPrefixedLogWriter(os.Stdout, "chrome stdout")
 	cmd.Stderr = newPrefixedLogWriter(os.Stderr, "chrome stderr")

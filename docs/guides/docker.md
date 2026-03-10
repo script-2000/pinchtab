@@ -101,11 +101,10 @@ For current runtime overrides, rely on:
 - `PINCHTAB_BIND` — bind address (default: 127.0.0.1, overridden to 0.0.0.0 in managed-config containers)
 - `PINCHTAB_PORT` — server port (default: 9867)
 - `PINCHTAB_TOKEN` — auth token (prefer Docker secrets; see below)
-- `CHROME_BIN` — path to Chrome binary (auto-detected)
 
-Everything else should go in `config.json`.
+Everything else, including Chrome binary path, should go in `config.json`.
 
-In the bundled image, you usually do not need to set `PINCHTAB_BIND`, `PINCHTAB_PORT`, or `CHROME_BIN` manually unless you are overriding the generated config or replacing the browser binary. The managed-config entrypoint supplies `PINCHTAB_BIND=0.0.0.0` at runtime so Docker port publishing works without broadening the persisted config.
+In the bundled image, you usually do not need to set `PINCHTAB_BIND` or `PINCHTAB_PORT` manually. The managed-config entrypoint supplies `PINCHTAB_BIND=0.0.0.0` at runtime so Docker port publishing works without broadening the persisted config. To customize the Chrome binary path, use `config.json`.
 
 ### About `PINCHTAB_BIND=0.0.0.0` in Containers
 

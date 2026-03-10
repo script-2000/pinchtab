@@ -150,12 +150,7 @@ func StartServer(cfg ServerConfig) (*Server, error) {
 		"PINCHTAB_CONFIG="+filepath.Join(s.Dir, "config.json"), // Isolate from host config
 	)
 
-	// Chrome binary from host (for CI environments)
-	if bin := os.Getenv("CHROME_BIN"); bin != "" {
-		env = append(env, "CHROME_BIN="+bin)
-	} else if legacyBin := os.Getenv("CHROME_BINARY"); legacyBin != "" {
-		env = append(env, "CHROME_BIN="+legacyBin)
-	}
+	// Chrome binary is configured via config.json, not env vars
 
 	s.cmd = exec.Command(s.BinaryPath) // #nosec G204 -- BinaryPath is from os.MkdirTemp, not user input
 	s.cmd.Env = env

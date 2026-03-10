@@ -83,7 +83,6 @@ ENVIRONMENT:
   PINCHTAB_URL         Server URL (default: http://127.0.0.1:9867)
   PINCHTAB_TOKEN       Auth token
   PINCHTAB_PORT        Server port (default: 9867)
-  CHROME_BIN           Chrome binary path
 
 FLAGS (global, place before or after command):
   --instance <id>      Target a specific instance by ID (e.g., pinchtab nav --instance abc123 https://...)

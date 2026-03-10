@@ -507,7 +507,7 @@ func Load() *RuntimeConfig {
 		BlockAds:          false,
 		MaxTabs:           20,
 		MaxParallelTabs:   0,
-		ChromeBinary:      os.Getenv("CHROME_BIN"),
+		ChromeBinary:      "", // Set via config.json only; env var CHROME_BIN removed
 		ChromeExtraFlags:  "",
 		ExtensionPaths:    nil,
 		UserAgent:         "",
@@ -626,7 +626,7 @@ func applyFileConfig(cfg *RuntimeConfig, fc *FileConfig) {
 	if fc.Browser.ChromeVersion != "" {
 		cfg.ChromeVersion = fc.Browser.ChromeVersion
 	}
-	if fc.Browser.ChromeBinary != "" && os.Getenv("CHROME_BIN") == "" {
+	if fc.Browser.ChromeBinary != "" {
 		cfg.ChromeBinary = fc.Browser.ChromeBinary
 	}
 	if fc.Browser.ChromeExtraFlags != "" {

@@ -135,13 +135,11 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 	_ = os.Setenv("PINCHTAB_PORT", "1234")
 	_ = os.Setenv("PINCHTAB_BIND", "0.0.0.0")
 	_ = os.Setenv("PINCHTAB_TOKEN", "secret")
-	_ = os.Setenv("CHROME_BIN", "/tmp/chrome")
 	defer func() {
 		_ = os.Unsetenv("PINCHTAB_CONFIG")
 		_ = os.Unsetenv("PINCHTAB_PORT")
 		_ = os.Unsetenv("PINCHTAB_BIND")
 		_ = os.Unsetenv("PINCHTAB_TOKEN")
-		_ = os.Unsetenv("CHROME_BIN")
 	}()
 
 	cfg := Load()
@@ -154,9 +152,7 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 	if cfg.Token != "secret" {
 		t.Errorf("env Token = %v, want secret", cfg.Token)
 	}
-	if cfg.ChromeBinary != "/tmp/chrome" {
-		t.Errorf("env ChromeBinary = %v, want /tmp/chrome", cfg.ChromeBinary)
-	}
+	// ChromeBinary is config-only, no longer available as env var
 }
 
 func TestPinchtabEnvTakesPrecedence(t *testing.T) {
@@ -616,7 +612,6 @@ func clearConfigEnvVars(t *testing.T) {
 	t.Helper()
 	envVars := []string{
 		"PINCHTAB_PORT", "PINCHTAB_BIND", "PINCHTAB_TOKEN", "PINCHTAB_CONFIG",
-		"CHROME_BIN",
 	}
 	for _, v := range envVars {
 		_ = os.Unsetenv(v)

@@ -309,9 +309,7 @@ func (o *Orchestrator) Launch(name, port string, headless bool, extensionPaths [
 		"PINCHTAB_PORT":   port,
 		"PINCHTAB_CONFIG": childConfigPath,
 	}
-	if o.runtimeCfg != nil && o.runtimeCfg.ChromeBinary != "" {
-		envOverrides["CHROME_BIN"] = o.runtimeCfg.ChromeBinary
-	}
+	// ChromeBinary is passed via config.json, not as env var
 	env := mergeEnvWithOverrides(filterEnvWithPrefixes(os.Environ(), "BRIDGE_", "PINCHTAB_"), envOverrides)
 
 	logBuf := newRingBuffer(256 * 1024)
