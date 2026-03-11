@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pinchtab/pinchtab/internal/cliui"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/dashboard"
 	"github.com/pinchtab/pinchtab/internal/handlers"
@@ -137,8 +138,8 @@ func runDashboard(cfg *config.RuntimeConfig) {
 	})
 
 	if IsDaemonRunning() && checkPinchTabRunning(dashPort, cfg.Token) {
-		fmt.Println(styleStdout(cliWarningStyle, fmt.Sprintf("  pinchtab already running as a daemon on port %s", dashPort)))
-		fmt.Println(styleStdout(cliMutedStyle, "  Stop the daemon first with `pinchtab daemon stop` to run in the foreground."))
+		fmt.Println(cliui.StyleStdout(cliui.WarningStyle, fmt.Sprintf("  pinchtab already running as a daemon on port %s", dashPort)))
+		fmt.Println(cliui.StyleStdout(cliui.MutedStyle, "  Stop the daemon first with `pinchtab daemon stop` to run in the foreground."))
 		fmt.Println()
 		os.Exit(0)
 	}

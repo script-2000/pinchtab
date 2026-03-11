@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pinchtab/pinchtab/internal/browsercli"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,7 @@ var quickCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliQuick(client, base, token, args)
+			browsercli.Quick(client, base, token, args)
 		})
 	},
 }
@@ -30,7 +31,7 @@ var navCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliNavigate(client, base, token, args)
+			browsercli.Navigate(client, base, token, args)
 		})
 	},
 }
@@ -41,7 +42,7 @@ var snapCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliSnapshot(client, base, token, args)
+			browsercli.Snapshot(client, base, token, args)
 		})
 	},
 }
@@ -53,7 +54,7 @@ var clickCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliAction(client, base, token, "click", args)
+			browsercli.Action(client, base, token, "click", args)
 		})
 	},
 }
@@ -65,7 +66,7 @@ var typeCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliAction(client, base, token, "type", args)
+			browsercli.Action(client, base, token, "type", args)
 		})
 	},
 }
@@ -76,7 +77,7 @@ var screenshotCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliScreenshot(client, base, token, args)
+			browsercli.Screenshot(client, base, token, args)
 		})
 	},
 }
@@ -87,7 +88,7 @@ var tabsCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliTabs(client, base, token, args)
+			browsercli.Tabs(client, base, token, args)
 		})
 	},
 }
@@ -98,7 +99,7 @@ var instancesCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliInstances(client, base, token)
+			browsercli.Instances(client, base, token)
 		})
 	},
 }
@@ -109,7 +110,7 @@ var healthCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliHealth(client, base, token)
+			browsercli.Health(client, base, token)
 		})
 	},
 }
@@ -121,7 +122,7 @@ var pressCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliAction(client, base, token, "press", args)
+			browsercli.Action(client, base, token, "press", args)
 		})
 	},
 }
@@ -133,7 +134,7 @@ var fillCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliAction(client, base, token, "fill", args)
+			browsercli.Action(client, base, token, "fill", args)
 		})
 	},
 }
@@ -145,7 +146,7 @@ var hoverCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliAction(client, base, token, "hover", args)
+			browsercli.Action(client, base, token, "hover", args)
 		})
 	},
 }
@@ -157,7 +158,7 @@ var scrollCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliAction(client, base, token, "scroll", args)
+			browsercli.Action(client, base, token, "scroll", args)
 		})
 	},
 }
@@ -169,7 +170,7 @@ var evalCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliEvaluate(client, base, token, args)
+			browsercli.Evaluate(client, base, token, args)
 		})
 	},
 }
@@ -180,7 +181,7 @@ var pdfCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliPDF(client, base, token, args)
+			browsercli.PDF(client, base, token, args)
 		})
 	},
 }
@@ -191,7 +192,7 @@ var textCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliText(client, base, token, args)
+			browsercli.Text(client, base, token, args)
 		})
 	},
 }
@@ -202,7 +203,7 @@ var profilesCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.Load()
 		runCLIWith(cfg, func(client *http.Client, base, token string) {
-			cliProfiles(client, base, token)
+			browsercli.Profiles(client, base, token)
 		})
 	},
 }
@@ -238,7 +239,7 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Load()
 			runCLIWith(cfg, func(client *http.Client, base, token string) {
-				cliInstanceStart(client, base, token, args)
+				browsercli.InstanceStart(client, base, token, args)
 			})
 		},
 	})
@@ -249,7 +250,7 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Load()
 			runCLIWith(cfg, func(client *http.Client, base, token string) {
-				cliInstanceNavigate(client, base, token, args)
+				browsercli.InstanceNavigate(client, base, token, args)
 			})
 		},
 	})
@@ -260,7 +261,7 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Load()
 			runCLIWith(cfg, func(client *http.Client, base, token string) {
-				cliInstanceStop(client, base, token, args)
+				browsercli.InstanceStop(client, base, token, args)
 			})
 		},
 	})
@@ -271,7 +272,7 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Load()
 			runCLIWith(cfg, func(client *http.Client, base, token string) {
-				cliInstanceLogs(client, base, token, args)
+				browsercli.InstanceLogs(client, base, token, args)
 			})
 		},
 	})
@@ -339,44 +340,44 @@ func runCLI(cfg *config.RuntimeConfig) {
 
 	base := orchBase
 	if instanceID != "" {
-		base = resolveInstanceBase(orchBase, token, instanceID, cfg.Bind)
+		base = browsercli.ResolveInstanceBase(orchBase, token, instanceID, cfg.Bind)
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	if cmd != "help" {
-		if !checkServerAndGuide(client, base, token) {
+		if !browsercli.CheckServerAndGuide(client, base, token) {
 			return
 		}
 	}
 
 	switch cmd {
 	case "nav", "navigate":
-		cliNavigate(client, base, token, args)
+		browsercli.Navigate(client, base, token, args)
 	case "snap", "snapshot":
-		cliSnapshot(client, base, token, args)
+		browsercli.Snapshot(client, base, token, args)
 	case "click", "type", "press", "fill", "hover", "scroll", "select", "focus":
-		cliAction(client, base, token, cmd, args)
+		browsercli.Action(client, base, token, cmd, args)
 	case "text":
-		cliText(client, base, token, args)
+		browsercli.Text(client, base, token, args)
 	case "tabs", "tab":
-		cliTabs(client, base, token, args)
+		browsercli.Tabs(client, base, token, args)
 	case "screenshot", "ss":
-		cliScreenshot(client, base, token, args)
+		browsercli.Screenshot(client, base, token, args)
 	case "eval", "evaluate":
-		cliEvaluate(client, base, token, args)
+		browsercli.Evaluate(client, base, token, args)
 	case "pdf":
-		cliPDF(client, base, token, args)
+		browsercli.PDF(client, base, token, args)
 	case "health":
-		cliHealth(client, base, token)
+		browsercli.Health(client, base, token)
 	case "instance":
-		cliInstance(client, base, token, args)
+		browsercli.Instance(client, base, token, args)
 	case "instances":
-		cliInstances(client, base, token)
+		browsercli.Instances(client, base, token)
 	case "profiles":
-		cliProfiles(client, base, token)
+		browsercli.Profiles(client, base, token)
 	case "quick":
-		cliQuick(client, base, token, args)
+		browsercli.Quick(client, base, token, args)
 	case "help":
 		cliHelp()
 	}

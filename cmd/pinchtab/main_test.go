@@ -23,4 +23,3 @@ func TestServerTimeoutOrdering(t *testing.T) {
 		t.Errorf("WriteTimeout (%v) should be less than IdleTimeout (%v)", write, idle)
 	}
 }
-

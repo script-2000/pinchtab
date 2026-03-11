@@ -1,9 +1,8 @@
 package main
 
 import (
-	"testing"
-
 	"github.com/pinchtab/pinchtab/internal/cliui"
+	"testing"
 )
 
 func TestSecurityLevelColor(t *testing.T) {

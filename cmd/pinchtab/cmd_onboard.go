@@ -8,12 +8,12 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/pinchtab/pinchtab/internal/cliui"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -22,60 +22,6 @@ const (
 	pinchtabDaemonUnitName = "pinchtab.service"
 	pinchtabLaunchdLabel   = "com.pinchtab.pinchtab"
 )
-
-type onboardOptions struct {
-	force         bool
-	installDaemon bool
-}
-
-type onboardConfigStatus string
-
-const (
-	onboardConfigCreated   onboardConfigStatus = "created"
-	onboardConfigRecovered onboardConfigStatus = "recovered"
-	onboardConfigVerified  onboardConfigStatus = "verified"
-)
-
-type commandRunner interface {
-	CombinedOutput(name string, args ...string) ([]byte, error)
-}
-
-type osCommandRunner struct{}
-
-func (osCommandRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
-}
-
-type daemonEnvironment struct {
-	execPath      string
-	homeDir       string
-	osName        string
-	userID        string
-	xdgConfigHome string
-}
-
-type daemonManager interface {
-	Install(execPath, configPath string) (string, error)
-	ServicePath() string
-	Start() (string, error)
-	Restart() (string, error)
-	Status() (string, error)
-	Stop() (string, error)
-	Uninstall() (string, error)
-	ManualInstructions() string
-	Pid() (string, error)
-	Logs(n int) (string, error)
-}
-
-type systemdUserManager struct {
-	env    daemonEnvironment
-	runner commandRunner
-}
-
-type launchdManager struct {
-	env    daemonEnvironment
-	runner commandRunner
-}
 
 var onboardCmd = &cobra.Command{
 	Use:   "onboard",
@@ -170,7 +116,7 @@ func handleDaemonCommand(_ *config.RuntimeConfig, subcommand string) {
 
 	manager, err := currentDaemonManager()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, styleStderr(cliErrorStyle, err.Error()))
+		fmt.Fprintln(os.Stderr, cliui.StyleStderr(cliui.ErrorStyle, err.Error()))
 		os.Exit(1)
 	}
 
@@ -178,17 +124,17 @@ func handleDaemonCommand(_ *config.RuntimeConfig, subcommand string) {
 	case "install":
 		configPath, _, _, err := ensureOnboardConfig(false)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, styleStderr(cliErrorStyle, fmt.Sprintf("daemon install failed: %v", err)))
+			fmt.Fprintln(os.Stderr, cliui.StyleStderr(cliui.ErrorStyle, fmt.Sprintf("daemon install failed: %v", err)))
 			os.Exit(1)
 		}
 		message, err := manager.Install(managerEnvironment(manager).execPath, configPath)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, styleStderr(cliErrorStyle, fmt.Sprintf("daemon install failed: %v", err)))
+			fmt.Fprintln(os.Stderr, cliui.StyleStderr(cliui.ErrorStyle, fmt.Sprintf("daemon install failed: %v", err)))
 			fmt.Println()
 			fmt.Println(manager.ManualInstructions())
 			os.Exit(1)
 		}
-		fmt.Println(styleStdout(cliSuccessStyle, "  [ok] ") + message)
+		fmt.Println(cliui.StyleStdout(cliui.SuccessStyle, "  [ok] ") + message)
 		printDaemonFollowUp()
 	case "start":
 		printDaemonManagerResult(manager.Start())
@@ -199,70 +145,70 @@ func handleDaemonCommand(_ *config.RuntimeConfig, subcommand string) {
 	case "uninstall":
 		message, err := manager.Uninstall()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, styleStderr(cliErrorStyle, err.Error()))
+			fmt.Fprintln(os.Stderr, cliui.StyleStderr(cliui.ErrorStyle, err.Error()))
 			fmt.Println()
 			fmt.Println(manager.ManualInstructions())
 			os.Exit(1)
 		}
-		fmt.Println(styleStdout(cliSuccessStyle, "  [ok] ") + message)
+		fmt.Println(cliui.StyleStdout(cliui.SuccessStyle, "  [ok] ") + message)
 	default:
-		fmt.Fprintln(os.Stderr, styleStderr(cliErrorStyle, fmt.Sprintf("unknown daemon command: %s", subcommand)))
+		fmt.Fprintln(os.Stderr, cliui.StyleStderr(cliui.ErrorStyle, fmt.Sprintf("unknown daemon command: %s", subcommand)))
 		daemonUsage()
 		os.Exit(2)
 	}
 }
 
 func daemonUsage() {
-	fmt.Println(styleStdout(cliHeadingStyle, "Usage:") + " " + styleStdout(cliCommandStyle, "pinchtab daemon <install|start|restart|stop|uninstall>"))
+	fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Usage:") + " " + cliui.StyleStdout(cliui.CommandStyle, "pinchtab daemon <install|start|restart|stop|uninstall>"))
 	fmt.Println()
-	fmt.Println(styleStdout(cliMutedStyle, "Manage the PinchTab user-level background service."))
+	fmt.Println(cliui.StyleStdout(cliui.MutedStyle, "Manage the PinchTab user-level background service."))
 	fmt.Println()
 }
 
 func printDaemonStatusSummary() {
 	manager, err := currentDaemonManager()
 	if err != nil {
-		fmt.Println(styleStdout(cliErrorStyle, "  Error: ")+err.Error())
+		fmt.Println(cliui.StyleStdout(cliui.ErrorStyle, "  Error: ") + err.Error())
 		return
 	}
 
 	installed := IsDaemonInstalled()
 	running := IsDaemonRunning()
 
-	fmt.Println(styleStdout(cliHeadingStyle, "Daemon status:"))
+	fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Daemon status:"))
 
-	status := styleStdout(cliWarningStyle, "not installed")
+	status := cliui.StyleStdout(cliui.WarningStyle, "not installed")
 	if installed {
-		status = styleStdout(cliSuccessStyle, "installed")
+		status = cliui.StyleStdout(cliui.SuccessStyle, "installed")
 	}
-	fmt.Printf("  %-12s %s\n", styleStdout(cliMutedStyle, "Service:"), status)
+	fmt.Printf("  %-12s %s\n", cliui.StyleStdout(cliui.MutedStyle, "Service:"), status)
 
-	state := styleStdout(cliMutedStyle, "stopped")
+	state := cliui.StyleStdout(cliui.MutedStyle, "stopped")
 	if running {
-		state = styleStdout(cliSuccessStyle, "active (running)")
+		state = cliui.StyleStdout(cliui.SuccessStyle, "active (running)")
 	}
-	fmt.Printf("  %-12s %s\n", styleStdout(cliMutedStyle, "State:"), state)
+	fmt.Printf("  %-12s %s\n", cliui.StyleStdout(cliui.MutedStyle, "State:"), state)
 
 	if running {
 		pid, _ := manager.Pid()
 		if pid != "" {
-			fmt.Printf("  %-12s %s\n", styleStdout(cliMutedStyle, "PID:"), styleStdout(cliValueStyle, pid))
+			fmt.Printf("  %-12s %s\n", cliui.StyleStdout(cliui.MutedStyle, "PID:"), cliui.StyleStdout(cliui.ValueStyle, pid))
 		}
 	}
 
 	if installed {
-		fmt.Printf("  %-12s %s\n", styleStdout(cliMutedStyle, "Path:"), styleStdout(cliValueStyle, manager.ServicePath()))
+		fmt.Printf("  %-12s %s\n", cliui.StyleStdout(cliui.MutedStyle, "Path:"), cliui.StyleStdout(cliui.ValueStyle, manager.ServicePath()))
 	}
 
 	if installed {
 		logs, err := manager.Logs(5)
 		if err == nil && strings.TrimSpace(logs) != "" {
 			fmt.Println()
-			fmt.Println(styleStdout(cliHeadingStyle, "Recent logs:"))
+			fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Recent logs:"))
 			lines := strings.Split(logs, "\n")
 			for _, line := range lines {
 				if strings.TrimSpace(line) != "" {
-					fmt.Printf("  %s\n", styleStdout(cliMutedStyle, line))
+					fmt.Printf("  %s\n", cliui.StyleStdout(cliui.MutedStyle, line))
 				}
 			}
 		}
@@ -272,11 +218,11 @@ func printDaemonStatusSummary() {
 
 func printDaemonManagerResult(message string, err error) {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, styleStderr(cliErrorStyle, err.Error()))
+		fmt.Fprintln(os.Stderr, cliui.StyleStderr(cliui.ErrorStyle, err.Error()))
 		os.Exit(1)
 	}
 	if strings.HasPrefix(message, "Installed") || strings.HasPrefix(message, "Pinchtab daemon") {
-		fmt.Println(styleStdout(cliSuccessStyle, "  [ok] ") + message)
+		fmt.Println(cliui.StyleStdout(cliui.SuccessStyle, "  [ok] ") + message)
 	} else {
 		// For status, it might be a block of text
 		fmt.Println(message)
@@ -284,7 +230,7 @@ func printDaemonManagerResult(message string, err error) {
 }
 
 func ensureOnboardConfig(force bool) (string, *config.RuntimeConfig, onboardConfigStatus, error) {
-	fc, configPath, err := config.LoadFileConfig()
+	_, configPath, err := config.LoadFileConfig()
 	if err != nil {
 		return "", nil, "", err
 	}
@@ -301,317 +247,171 @@ func ensureOnboardConfig(force bool) (string, *config.RuntimeConfig, onboardConf
 		if err := config.SaveFileConfig(&defaults, configPath); err != nil {
 			return "", nil, "", err
 		}
-		status = onboardConfigCreated
-	} else {
-		before := securityDefaultsSnapshot(fc)
-		applyRecommendedSecurityDefaults(fc)
-		after := securityDefaultsSnapshot(fc)
-		if !reflect.DeepEqual(before, after) {
-			if err := config.SaveFileConfig(fc, configPath); err != nil {
-				return "", nil, "", err
-			}
+		if !exists {
+			status = onboardConfigCreated
+		} else {
 			status = onboardConfigRecovered
 		}
 	}
 
-	effectiveCfg := config.Load()
-	return configPath, effectiveCfg, status, nil
+	return configPath, config.Load(), status, nil
 }
 
-func renderOnboardGuide(configPath string, cfg *config.RuntimeConfig, configStatus onboardConfigStatus, installDaemon bool) string {
-	var out bytes.Buffer
+type onboardConfigStatus string
+
+const (
+	onboardConfigCreated   onboardConfigStatus = "created"
+	onboardConfigRecovered onboardConfigStatus = "recovered"
+	onboardConfigVerified  onboardConfigStatus = "verified"
+)
+
+func runInteractiveOnboard(configPath string, cfg *config.RuntimeConfig, configStatus onboardConfigStatus, installDaemonOpt bool) error {
 	totalSteps := 6
-	if installDaemon {
+	if installDaemonOpt {
 		totalSteps = 7
 	}
 
-	fmt.Fprintf(&out, "%s\n\n", renderOnboardTitle())
-	out.WriteString(renderOnboardConfigStep(1, totalSteps, configPath, configStatus))
-	out.WriteString(renderOnboardAPIAccessStep(2, totalSteps, cfg))
-	out.WriteString(renderOnboardSensitiveStep(3, totalSteps, cfg))
-	out.WriteString(renderOnboardAttachStep(4, totalSteps, cfg))
-	out.WriteString(renderOnboardIDPIStep(5, totalSteps, cfg))
+	fmt.Print("\033[H\033[2J") // Clear screen
+	fmt.Println(renderOnboardTitle())
+	fmt.Println()
 
-	if installDaemon {
-		out.WriteString(renderOnboardDaemonStep(6, totalSteps, true))
-		out.WriteString(renderOnboardNextStep(7, totalSteps, true))
-		return out.String()
+	// Step 1: Config
+	fmt.Print(renderOnboardConfigStep(1, totalSteps, configPath, configStatus))
+
+	// Step 2: API
+	fmt.Print(renderOnboardAPIAccessStep(2, totalSteps, cfg))
+
+	// Step 3: Capabilities
+	fmt.Print(renderOnboardSensitiveStep(3, totalSteps, cfg))
+
+	// Step 4: Attach
+	fmt.Print(renderOnboardAttachStep(4, totalSteps, cfg))
+
+	// Step 5: IDPI
+	fmt.Print(renderOnboardIDPIStep(5, totalSteps, cfg))
+
+	// Step 6: Daemon (optional)
+	currentStep := 6
+	daemonInstalled := false
+	if installDaemonOpt {
+		fmt.Print(cliui.StyleStdout(cliui.MutedStyle, "  Installing background service..."))
+		if _, err := installDaemon(configPath); err != nil {
+			fmt.Printf("\r  %s %v\n", cliui.StyleStdout(cliui.ErrorStyle, "!!"), err)
+		} else {
+			fmt.Print("\r")
+			daemonInstalled = true
+			fmt.Print(renderOnboardDaemonStep(6, totalSteps, true))
+		}
+		currentStep++
 	}
-	out.WriteString(renderOnboardNextStep(6, totalSteps, false))
+
+	fmt.Print(renderOnboardNextStep(currentStep, totalSteps, daemonInstalled))
+	fmt.Println()
+
+	return nil
+}
+
+func installDaemon(configPath string) (string, error) {
+	manager, err := currentDaemonManager()
+	if err != nil {
+		return "", err
+	}
+	return manager.Install(managerEnvironment(manager).execPath, configPath)
+}
+
+func renderOnboardGuide(configPath string, cfg *config.RuntimeConfig, configStatus onboardConfigStatus, installDaemonOpt bool) string {
+	var out bytes.Buffer
+	total := 6
+	if installDaemonOpt {
+		total = 7
+	}
+
+	out.WriteString(renderOnboardTitle() + "\n\n")
+	out.WriteString(renderOnboardConfigStep(1, total, configPath, configStatus))
+	out.WriteString(renderOnboardAPIAccessStep(2, total, cfg))
+	out.WriteString(renderOnboardSensitiveStep(3, total, cfg))
+	out.WriteString(renderOnboardAttachStep(4, total, cfg))
+	out.WriteString(renderOnboardIDPIStep(5, total, cfg))
+
+	daemonInstalled := false
+	if installDaemonOpt {
+		daemonInstalled = IsDaemonInstalled()
+		out.WriteString(renderOnboardDaemonStep(6, total, daemonInstalled))
+		out.WriteString(renderOnboardNextStep(7, total, daemonInstalled))
+	} else {
+		out.WriteString(renderOnboardNextStep(6, total, false))
+	}
+
 	return out.String()
 }
 
-func writeSecurityToggle(out *bytes.Buffer, key string, enabled bool, description string) {
-	writeOnboardKV(out, key, fmt.Sprintf("%t", enabled))
-	if enabled {
-		writeOnboardWarning(out, "Enabled: this exposes %s to any authenticated caller.", description)
-		return
-	}
-	writeOnboardMessage(out, true, "Disabled by default: this keeps %s off until you intentionally opt in.", description)
-}
-
 func summarizeToken(token string) string {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return "<empty>"
-	}
 	if len(token) <= 8 {
-		return "<set>"
+		return token
 	}
 	return token[:4] + "..." + token[len(token)-4:]
 }
 
-func formatStringSlice(values []string) string {
-	if len(values) == 0 {
-		return "<empty>"
+func formatStringSlice(ss []string) string {
+	if len(ss) == 0 {
+		return "(none)"
 	}
-	return strings.Join(values, ", ")
+	return strings.Join(ss, ", ")
 }
 
-func installDaemon(configPath string) (daemonManager, error) {
-	manager, err := currentDaemonManager()
-	if err != nil {
-		return nil, err
-	}
-	message, err := manager.Install(managerEnvironment(manager).execPath, configPath)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println(message)
-	printDaemonFollowUp()
-	return manager, nil
-}
-
-func runInteractiveOnboard(configPath string, cfg *config.RuntimeConfig, configStatus onboardConfigStatus, installDaemonRequested bool) error {
-	totalSteps := 6
-	if installDaemonRequested {
-		totalSteps = 7
-	}
-
-	installDaemonChoice := installDaemonRequested
-	runtimeMode := "manual"
-	if installDaemonChoice {
-		runtimeMode = "daemon"
-	}
-	selectedSensitiveCaps := enabledSensitiveCapabilityKeys(cfg)
-
-	groups := []*huh.Group{
-		huh.NewGroup(
-			huh.NewNote().
-				Title("Config").
-				Description(onboardConfigSummary(configPath, configStatus)).
-				Next(true).
-				NextLabel("Continue"),
-		).Title(fmt.Sprintf("Step 1/%d", totalSteps)).Description("Config and recovery"),
-		huh.NewGroup(
-			huh.NewNote().
-				Title("API access").
-				Description(onboardAPIAccessSummary(cfg)).
-				Next(true).
-				NextLabel("Continue"),
-		).Title(fmt.Sprintf("Step 2/%d", totalSteps)).Description("Bind and token"),
-		huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Opt in sensitive capabilities").
-				Description("Leave everything unselected for the recommended default. Select only what you intentionally want to expose.").
-				Options(
-					huh.NewOption("evaluate", "evaluate").Selected(cfg.AllowEvaluate),
-					huh.NewOption("macro", "macro").Selected(cfg.AllowMacro),
-					huh.NewOption("screencast", "screencast").Selected(cfg.AllowScreencast),
-					huh.NewOption("download", "download").Selected(cfg.AllowDownload),
-					huh.NewOption("upload", "upload").Selected(cfg.AllowUpload),
-				).
-				Value(&selectedSensitiveCaps).
-				Filtering(false).
-				Height(8),
-			huh.NewNote().
-				Description("These are high-risk endpoint families. If enabled, any authenticated caller can use them.").
-				Next(true).
-				NextLabel("Continue"),
-		).Title(fmt.Sprintf("Step 3/%d", totalSteps)).Description("High-risk endpoint families"),
-		huh.NewGroup(
-			huh.NewNote().
-				Title("Attach policy").
-				Description(onboardAttachSummary(cfg)).
-				Next(true).
-				NextLabel("Continue"),
-		).Title(fmt.Sprintf("Step 4/%d", totalSteps)).Description("External Chrome attach controls"),
-		huh.NewGroup(
-			huh.NewNote().
-				Title("IDPI protections").
-				Description(onboardIDPISummary(cfg)).
-				Next(true).
-				NextLabel("Continue"),
-		).Title(fmt.Sprintf("Step 5/%d", totalSteps)).Description("Indirect prompt-injection defense"),
-	}
-
-	modeStep := 6
-
-	modeOptions := []huh.Option[string]{
-		huh.NewOption("Install background service (recommended)", "daemon"),
-		huh.NewOption("Start it manually when needed", "manual"),
-	}
-	groups = append(groups, huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("How should PinchTab run?").
-			Description("Choose whether onboarding should install a persistent user-level service.").
-			Options(modeOptions...).
-			Value(&runtimeMode),
-		huh.NewNote().
-			Title("Background service").
-			Description("Daemon mode installs PinchTab once and gives you `pinchtab daemon status/start/restart/stop/uninstall`. Manual mode leaves startup under your control.").
-			Next(true).
-			NextLabel("Finish wizard"),
-	).Title(fmt.Sprintf("Step %d/%d", modeStep, totalSteps)).Description("Runtime mode"))
-
-	form := huh.NewForm(groups...).WithTheme(pinchtabOnboardTheme()).WithWidth(68)
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			fmt.Println("Onboarding stopped at your request.")
-			return nil
-		}
-		return err
-	}
-
-	if err := saveSelectedSensitiveCapabilities(configPath, selectedSensitiveCaps); err != nil {
-		return err
-	}
-
-	installDaemonChoice = runtimeMode == "daemon"
-	if installDaemonChoice {
-		if _, err := installDaemon(configPath); err != nil {
-			return err
-		}
-		fmt.Println()
-		fmt.Print(renderOnboardDaemonStep(modeStep, totalSteps, true))
-		fmt.Print(renderOnboardNextStep(0, 0, true))
-		return nil
-	}
-
-	fmt.Println()
-	fmt.Print(renderOnboardNextStep(0, 0, false))
-	return nil
-}
-
-func onboardConfigSummary(configPath string, configStatus onboardConfigStatus) string {
-	lines := []string{}
-	switch configStatus {
-	case onboardConfigCreated:
-		lines = append(lines, "Created secure default config.")
-	case onboardConfigRecovered:
-		lines = append(lines, "Recovered secure baseline.")
-		lines = append(lines, "Preserved browser, profile, port, and timeout settings.")
-	default:
-		lines = append(lines, "Secure defaults already in place.")
-	}
-	lines = append(lines, "")
-	lines = append(lines, fmt.Sprintf("Path      %s", configPath))
-	lines = append(lines, "Override  `PINCHTAB_CONFIG`")
-	return strings.Join(lines, "\n")
-}
-
-func onboardAPIAccessSummary(cfg *config.RuntimeConfig) string {
-	return strings.Join([]string{
-		onboardFact("server.bind", cfg.Bind, "local-only API access when set to 127.0.0.1"),
-		"",
-		onboardFact("server.token", summarizeToken(cfg.Token), "required for API and CLI auth"),
-	}, "\n")
-}
-
-func onboardSensitiveSummary(cfg *config.RuntimeConfig) string {
-	lines := []string{
-		onboardToggleSummary("security.allowEvaluate", cfg.AllowEvaluate, "JavaScript execution in the page context"),
-		onboardToggleSummary("security.allowMacro", cfg.AllowMacro, "higher-level macro automation routes"),
-		onboardToggleSummary("security.allowScreencast", cfg.AllowScreencast, "live page streaming output"),
-		onboardToggleSummary("security.allowDownload", cfg.AllowDownload, "server-side download endpoints"),
-		onboardToggleSummary("security.allowUpload", cfg.AllowUpload, "uploading local files through browser flows"),
-	}
-	return strings.Join(lines, "\n\n")
-}
-
-func enabledSensitiveCapabilityKeys(cfg *config.RuntimeConfig) []string {
-	if cfg == nil {
-		return nil
-	}
-	keys := make([]string, 0, 5)
-	if cfg.AllowEvaluate {
-		keys = append(keys, "evaluate")
-	}
-	if cfg.AllowMacro {
-		keys = append(keys, "macro")
-	}
-	if cfg.AllowScreencast {
-		keys = append(keys, "screencast")
-	}
-	if cfg.AllowDownload {
-		keys = append(keys, "download")
-	}
-	if cfg.AllowUpload {
-		keys = append(keys, "upload")
-	}
-	return keys
-}
-
-func saveSelectedSensitiveCapabilities(configPath string, selected []string) error {
-	fc, _, err := config.LoadFileConfig()
-	if err != nil {
-		return err
-	}
-
-	has := make(map[string]bool, len(selected))
-	for _, item := range selected {
-		has[item] = true
-	}
-
-	fc.Security.AllowEvaluate = boolPtr(has["evaluate"])
-	fc.Security.AllowMacro = boolPtr(has["macro"])
-	fc.Security.AllowScreencast = boolPtr(has["screencast"])
-	fc.Security.AllowDownload = boolPtr(has["download"])
-	fc.Security.AllowUpload = boolPtr(has["upload"])
-
-	if err := config.SaveFileConfig(fc, configPath); err != nil {
-		return err
-	}
-	return nil
-}
-
-func boolPtr(v bool) *bool {
-	return &v
-}
-
-func onboardAttachSummary(cfg *config.RuntimeConfig) string {
-	return strings.Join([]string{
-		onboardFact("attach.enabled", fmt.Sprintf("%t", cfg.AttachEnabled), "keep off unless external Chrome attach is intentional"),
-		"",
-		onboardFact("attach.hosts", strings.Join(cfg.AttachAllowHosts, ", "), "limits attach targets to trusted hosts"),
-		"",
-		onboardFact("attach.schemes", strings.Join(cfg.AttachAllowSchemes, ", "), "websocket-only transport"),
-	}, "\n")
-}
-
-func onboardIDPISummary(cfg *config.RuntimeConfig) string {
-	return strings.Join([]string{
-		onboardFact("idpi.enabled", fmt.Sprintf("%t", cfg.IDPI.Enabled), "turns on indirect prompt-injection defense"),
-		"",
-		onboardFact("idpi.domains", formatStringSlice(cfg.IDPI.AllowedDomains), "trusted domains for the local-default setup"),
-		"",
-		onboardFact("idpi.strictMode", fmt.Sprintf("%t", cfg.IDPI.StrictMode), "blocks suspicious content instead of warning only"),
-		"",
-		onboardFact("idpi.scanContent", fmt.Sprintf("%t", cfg.IDPI.ScanContent), "scans /text and /snapshot output"),
-		"",
-		onboardFact("idpi.wrapContent", fmt.Sprintf("%t", cfg.IDPI.WrapContent), "marks extracted content as untrusted data"),
-	}, "\n")
-}
-
-func onboardToggleSummary(key string, enabled bool, description string) string {
+func writeSecurityToggle(out *bytes.Buffer, key string, enabled bool, description string) {
+	val := "false"
 	if enabled {
-		return onboardFact(key, "true", "exposes "+description+" to any authenticated caller")
+		val = "true"
 	}
-	return onboardFact(key, "false", "disabled by default until you explicitly opt in")
+	writeOnboardKV(out, key, val)
+	writeOnboardNote(out, description)
 }
 
-func onboardFact(key, value, detail string) string {
-	return fmt.Sprintf("%-18s %s\n  - %s", key, value, detail)
+type onboardOptions struct {
+	installDaemon bool
+	force         bool
+}
+
+type commandRunner interface {
+	CombinedOutput(name string, arg ...string) ([]byte, error)
+}
+
+type osCommandRunner struct{}
+
+func (r osCommandRunner) CombinedOutput(name string, arg ...string) ([]byte, error) {
+	return exec.Command(name, arg...).CombinedOutput()
+}
+
+type daemonEnvironment struct {
+	execPath      string
+	homeDir       string
+	osName        string
+	userID        string
+	xdgConfigHome string
+}
+
+type daemonManager interface {
+	Install(execPath, configPath string) (string, error)
+	ServicePath() string
+	Start() (string, error)
+	Restart() (string, error)
+	Status() (string, error)
+	Stop() (string, error)
+	Uninstall() (string, error)
+	ManualInstructions() string
+	Pid() (string, error)
+	Logs(n int) (string, error)
+}
+
+type systemdUserManager struct {
+	env    daemonEnvironment
+	runner commandRunner
+}
+
+type launchdManager struct {
+	env    daemonEnvironment
+	runner commandRunner
 }
 
 func IsDaemonInstalled() bool {
@@ -640,14 +440,14 @@ func IsDaemonRunning() bool {
 func pinchtabOnboardTheme() *huh.Theme {
 	t := huh.ThemeBase()
 
-	textPrimary := pinchtabColorTextPrimary
+	textPrimary := cliui.ColorTextPrimary
 	textSecondary := lipgloss.Color("#94a3b8")
-	textMuted := pinchtabColorTextMuted
-	accent := pinchtabColorAccent
-	accentLight := pinchtabColorAccentLight
-	success := pinchtabColorSuccess
-	warning := pinchtabColorWarning
-	destructive := pinchtabColorDanger
+	textMuted := cliui.ColorTextMuted
+	accent := cliui.ColorAccent
+	accentLight := cliui.ColorAccentLight
+	success := cliui.ColorSuccess
+	warning := cliui.ColorWarning
+	destructive := cliui.ColorDanger
 
 	t.Form.Base = lipgloss.NewStyle().
 		Foreground(textPrimary).
@@ -664,7 +464,7 @@ func pinchtabOnboardTheme() *huh.Theme {
 
 	t.Focused.Base = lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(pinchtabColorBorder).
+		BorderForeground(cliui.ColorBorder).
 		BorderLeft(true).
 		PaddingLeft(1)
 	t.Focused.Card = t.Focused.Base
@@ -808,7 +608,7 @@ func renderOnboardNextStep(step, total int, installDaemon bool) string {
 	if step > 0 && total > 0 {
 		fmt.Fprintf(&out, "%s\n", styleOnboardStep(step, total, "Next commands"))
 	} else {
-		fmt.Fprintf(&out, "%s\n", styleValue("Next commands"))
+		fmt.Fprintf(&out, "%s\n", cliui.ValueStyle.Render("Next commands"))
 	}
 	if installDaemon {
 		writeOnboardCommand(&out, "pinchtab daemon")
@@ -824,20 +624,20 @@ func renderOnboardNextStep(step, total int, installDaemon bool) string {
 }
 
 func renderOnboardTitle() string {
-	return styleLogo("PinchTab") + "  " + styleMode("onboarding")
+	return cliui.HeadingStyle.Render("PinchTab") + "  " + cliui.CommandStyle.Render("onboarding")
 }
 
 func styleOnboardStep(step, total int, title string) string {
-	prefix := styleStdout(cliHeadingStyle, fmt.Sprintf("Step %d/%d", step, total))
-	return prefix + "  " + styleValue(title)
+	prefix := cliui.StyleStdout(cliui.HeadingStyle, fmt.Sprintf("Step %d/%d", step, total))
+	return prefix + "  " + cliui.ValueStyle.Render(title)
 }
 
 func writeOnboardKV(out *bytes.Buffer, key, value string) {
-	fmt.Fprintf(out, "  %s  %s\n", styleLabel(key), styleValue(value))
+	fmt.Fprintf(out, "  %s  %s\n", cliui.MutedStyle.Render(key), cliui.ValueStyle.Render(value))
 }
 
 func writeOnboardNote(out *bytes.Buffer, message string, args ...any) {
-	fmt.Fprintf(out, "  %s %s\n", styleStdout(cliMutedStyle, ">"), styleStdout(cliMutedStyle, fmt.Sprintf(message, args...)))
+	fmt.Fprintf(out, "  %s %s\n", cliui.StyleStdout(cliui.MutedStyle, ">"), cliui.StyleStdout(cliui.MutedStyle, fmt.Sprintf(message, args...)))
 }
 
 func writeOnboardMessage(out *bytes.Buffer, ok bool, message string, args ...any) {
@@ -849,16 +649,16 @@ func writeOnboardWarning(out *bytes.Buffer, message string, args ...any) {
 }
 
 func writeOnboardCommand(out *bytes.Buffer, command string) {
-	fmt.Fprintf(out, "  %s %s\n", styleStdout(cliMutedStyle, "$"), styleValue(command))
+	fmt.Fprintf(out, "  %s %s\n", cliui.StyleStdout(cliui.MutedStyle, "$"), cliui.ValueStyle.Render(command))
 }
 
 func printDaemonFollowUp() {
 	fmt.Println()
-	fmt.Println(styleStdout(cliHeadingStyle, "Follow-up commands:"))
-	fmt.Printf("  %s %s\n", styleStdout(cliCommandStyle, "pinchtab daemon"), styleStdout(cliMutedStyle, "# Check service health and logs"))
-	fmt.Printf("  %s %s\n", styleStdout(cliCommandStyle, "pinchtab daemon restart"), styleStdout(cliMutedStyle, "# Apply config changes"))
-	fmt.Printf("  %s %s\n", styleStdout(cliCommandStyle, "pinchtab daemon stop"), styleStdout(cliMutedStyle, "# Stop background service"))
-	fmt.Printf("  %s %s\n", styleStdout(cliCommandStyle, "pinchtab daemon uninstall"), styleStdout(cliMutedStyle, "# Remove service file"))
+	fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Follow-up commands:"))
+	fmt.Printf("  %s %s\n", cliui.StyleStdout(cliui.CommandStyle, "pinchtab daemon"), cliui.StyleStdout(cliui.MutedStyle, "# Check service health and logs"))
+	fmt.Printf("  %s %s\n", cliui.StyleStdout(cliui.CommandStyle, "pinchtab daemon restart"), cliui.StyleStdout(cliui.MutedStyle, "# Apply config changes"))
+	fmt.Printf("  %s %s\n", cliui.StyleStdout(cliui.CommandStyle, "pinchtab daemon stop"), cliui.StyleStdout(cliui.MutedStyle, "# Stop background service"))
+	fmt.Printf("  %s %s\n", cliui.StyleStdout(cliui.CommandStyle, "pinchtab daemon uninstall"), cliui.StyleStdout(cliui.MutedStyle, "# Remove service file"))
 }
 
 func currentDaemonManager() (daemonManager, error) {
@@ -1006,16 +806,16 @@ func (m *systemdUserManager) Logs(n int) (string, error) {
 func (m *systemdUserManager) ManualInstructions() string {
 	path := m.ServicePath()
 	var b strings.Builder
-	fmt.Fprintln(&b, styleStdout(cliHeadingStyle, "Manual instructions (Linux/systemd):"))
-	fmt.Fprintln(&b, styleStdout(cliMutedStyle, "To install manually:"))
-	fmt.Fprintf(&b, "  1. Create %s\n", styleStdout(cliValueStyle, path))
-	fmt.Fprintln(&b, "  2. Run: "+styleStdout(cliCommandStyle, "systemctl --user daemon-reload"))
-	fmt.Fprintln(&b, "  3. Run: "+styleStdout(cliCommandStyle, "systemctl --user enable --now pinchtab.service"))
+	fmt.Fprintln(&b, cliui.StyleStdout(cliui.HeadingStyle, "Manual instructions (Linux/systemd):"))
+	fmt.Fprintln(&b, cliui.StyleStdout(cliui.MutedStyle, "To install manually:"))
+	fmt.Fprintf(&b, "  1. Create %s\n", cliui.StyleStdout(cliui.ValueStyle, path))
+	fmt.Fprintln(&b, "  2. Run: "+cliui.StyleStdout(cliui.CommandStyle, "systemctl --user daemon-reload"))
+	fmt.Fprintln(&b, "  3. Run: "+cliui.StyleStdout(cliui.CommandStyle, "systemctl --user enable --now pinchtab.service"))
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, styleStdout(cliMutedStyle, "To uninstall manually:"))
-	fmt.Fprintln(&b, "  1. Run: "+styleStdout(cliCommandStyle, "systemctl --user disable --now pinchtab.service"))
-	fmt.Fprintf(&b, "  2. Remove: %s\n", styleStdout(cliValueStyle, path))
-	fmt.Fprintln(&b, "  3. Run: "+styleStdout(cliCommandStyle, "systemctl --user daemon-reload"))
+	fmt.Fprintln(&b, cliui.StyleStdout(cliui.MutedStyle, "To uninstall manually:"))
+	fmt.Fprintln(&b, "  1. Run: "+cliui.StyleStdout(cliui.CommandStyle, "systemctl --user disable --now pinchtab.service"))
+	fmt.Fprintf(&b, "  2. Remove: %s\n", cliui.StyleStdout(cliui.ValueStyle, path))
+	fmt.Fprintln(&b, "  3. Run: "+cliui.StyleStdout(cliui.CommandStyle, "systemctl --user daemon-reload"))
 	return b.String()
 }
 
@@ -1137,14 +937,14 @@ func (m *launchdManager) ManualInstructions() string {
 	path := m.ServicePath()
 	target := launchdDomainTarget(m.env)
 	var b strings.Builder
-	fmt.Fprintln(&b, styleStdout(cliHeadingStyle, "Manual instructions (macOS/launchd):"))
-	fmt.Fprintln(&b, styleStdout(cliMutedStyle, "To install manually:"))
-	fmt.Fprintf(&b, "  1. Create %s\n", styleStdout(cliValueStyle, path))
-	fmt.Fprintln(&b, "  2. Run: "+styleStdout(cliCommandStyle, fmt.Sprintf("launchctl bootstrap %s %s", target, path)))
+	fmt.Fprintln(&b, cliui.StyleStdout(cliui.HeadingStyle, "Manual instructions (macOS/launchd):"))
+	fmt.Fprintln(&b, cliui.StyleStdout(cliui.MutedStyle, "To install manually:"))
+	fmt.Fprintf(&b, "  1. Create %s\n", cliui.StyleStdout(cliui.ValueStyle, path))
+	fmt.Fprintln(&b, "  2. Run: "+cliui.StyleStdout(cliui.CommandStyle, fmt.Sprintf("launchctl bootstrap %s %s", target, path)))
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, styleStdout(cliMutedStyle, "To uninstall manually:"))
-	fmt.Fprintln(&b, "  1. Run: "+styleStdout(cliCommandStyle, fmt.Sprintf("launchctl bootout %s %s", target, path)))
-	fmt.Fprintf(&b, "  2. Remove: %s\n", styleStdout(cliValueStyle, path))
+	fmt.Fprintln(&b, cliui.StyleStdout(cliui.MutedStyle, "To uninstall manually:"))
+	fmt.Fprintln(&b, "  1. Run: "+cliui.StyleStdout(cliui.CommandStyle, fmt.Sprintf("launchctl bootout %s %s", target, path)))
+	fmt.Fprintf(&b, "  2. Remove: %s\n", cliui.StyleStdout(cliui.ValueStyle, path))
 	return b.String()
 }
 
@@ -1217,4 +1017,16 @@ func systemdUserConfigHome(env daemonEnvironment) string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func isInteractiveTerminal() bool {
+	in, err := os.Stdin.Stat()
+	if err != nil || (in.Mode()&os.ModeCharDevice) == 0 {
+		return false
+	}
+	out, err := os.Stdout.Stat()
+	if err != nil || (out.Mode()&os.ModeCharDevice) == 0 {
+		return false
+	}
+	return true
 }

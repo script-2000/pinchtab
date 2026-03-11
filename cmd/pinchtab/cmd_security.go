@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/pinchtab/pinchtab/internal/cliui"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -29,67 +30,67 @@ func handleSecurityCommand(cfg *config.RuntimeConfig) {
 	warnings := assessSecurityWarnings(cfg)
 	recommended := recommendedSecurityDefaultLines(cfg)
 
-	fmt.Println(styleStdout(cliHeadingStyle, "Security posture"))
+	fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Security posture"))
 	fmt.Println()
 	printSecuritySummary(os.Stdout, cfg, "  ")
 
 	if len(warnings) == 0 {
-		fmt.Println(styleStdout(cliHeadingStyle, "Warnings"))
+		fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Warnings"))
 		fmt.Println()
-		fmt.Println("  " + styleStdout(cliMutedStyle, "none"))
+		fmt.Println("  " + cliui.StyleStdout(cliui.MutedStyle, "none"))
 	} else {
-		fmt.Println(styleStdout(cliHeadingStyle, "Warnings"))
+		fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Warnings"))
 		fmt.Println()
 		for _, warning := range warnings {
-			fmt.Printf("  - %s\n", styleStdout(cliWarningStyle, warning.Message))
+			fmt.Printf("  - %s\n", cliui.StyleStdout(cliui.WarningStyle, warning.Message))
 			for i := 0; i+1 < len(warning.Attrs); i += 2 {
 				key, ok := warning.Attrs[i].(string)
 				if !ok || key == "hint" {
 					continue
 				}
-				fmt.Printf("      %s: %s\n", styleStdout(cliMutedStyle, key), styleStdout(cliValueStyle, formatSecurityValue(warning.Attrs[i+1])))
+				fmt.Printf("      %s: %s\n", cliui.StyleStdout(cliui.MutedStyle, key), cliui.StyleStdout(cliui.ValueStyle, formatSecurityValue(warning.Attrs[i+1])))
 			}
 			for i := 0; i+1 < len(warning.Attrs); i += 2 {
 				key, ok := warning.Attrs[i].(string)
 				if ok && key == "hint" {
-					fmt.Printf("      %s: %s\n", styleStdout(cliMutedStyle, "hint"), styleStdout(cliValueStyle, formatSecurityValue(warning.Attrs[i+1])))
+					fmt.Printf("      %s: %s\n", cliui.StyleStdout(cliui.MutedStyle, "hint"), cliui.StyleStdout(cliui.ValueStyle, formatSecurityValue(warning.Attrs[i+1])))
 				}
 			}
 		}
 	}
 
 	fmt.Println()
-	fmt.Println(styleStdout(cliHeadingStyle, "Recommended security defaults"))
+	fmt.Println(cliui.StyleStdout(cliui.HeadingStyle, "Recommended security defaults"))
 	fmt.Println()
 	if len(recommended) == 0 {
-		fmt.Println("  " + styleStdout(cliMutedStyle, "none"))
+		fmt.Println("  " + cliui.StyleStdout(cliui.MutedStyle, "none"))
 	} else {
 		printRecommendedSecurityDefaults(recommended)
 	}
 	fmt.Println()
 
 	if !isInteractiveTerminal() {
-		fmt.Println(styleStdout(cliMutedStyle, "Interactive restore skipped because stdin/stdout is not a terminal."))
+		fmt.Println(cliui.StyleStdout(cliui.MutedStyle, "Interactive restore skipped because stdin/stdout is not a terminal."))
 		return
 	}
 
 	if !promptRestoreDefaults() {
-		fmt.Println(styleStdout(cliMutedStyle, "No changes made."))
+		fmt.Println(cliui.StyleStdout(cliui.MutedStyle, "No changes made."))
 		return
 	}
 
 	configPath, changed, err := restoreSecurityDefaults()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, styleStderr(cliErrorStyle, fmt.Sprintf("Error restoring defaults: %v", err)))
+		fmt.Fprintln(os.Stderr, cliui.StyleStderr(cliui.ErrorStyle, fmt.Sprintf("Error restoring defaults: %v", err)))
 		os.Exit(1)
 	}
 	if !changed {
-		fmt.Println(styleStdout(cliMutedStyle, fmt.Sprintf("Security defaults already match %s", configPath)))
+		fmt.Println(cliui.StyleStdout(cliui.MutedStyle, fmt.Sprintf("Security defaults already match %s", configPath)))
 		return
 	}
 
-	fmt.Println(styleStdout(cliSuccessStyle, fmt.Sprintf("Security defaults restored in %s", configPath)))
-	fmt.Println(styleStdout(cliMutedStyle, "Restart PinchTab to apply file-based changes."))
+	fmt.Println(cliui.StyleStdout(cliui.SuccessStyle, fmt.Sprintf("Security defaults restored in %s", configPath)))
+	fmt.Println(cliui.StyleStdout(cliui.MutedStyle, "Restart PinchTab to apply file-based changes."))
 }
 
 func formatSecurityValue(value any) string {
@@ -103,7 +104,7 @@ func formatSecurityValue(value any) string {
 
 func printRecommendedSecurityDefaults(lines []string) {
 	for _, line := range lines {
-		fmt.Printf("  - %s\n", styleStdout(cliValueStyle, line))
+		fmt.Printf("  - %s\n", cliui.StyleStdout(cliui.ValueStyle, line))
 	}
 }
 
@@ -166,7 +167,7 @@ func recommendedSecurityDefaultLines(cfg *config.RuntimeConfig) []string {
 }
 
 func promptRestoreDefaults() bool {
-	fmt.Print(styleStdout(cliHeadingStyle, "Restore recommended security defaults in config?") + " " + styleStdout(cliMutedStyle, "(y/N): "))
+	fmt.Print(cliui.StyleStdout(cliui.HeadingStyle, "Restore recommended security defaults in config?") + " " + cliui.StyleStdout(cliui.MutedStyle, "(y/N): "))
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil && strings.TrimSpace(response) == "" {
@@ -178,18 +179,6 @@ func promptRestoreDefaults() bool {
 	default:
 		return false
 	}
-}
-
-func isInteractiveTerminal() bool {
-	in, err := os.Stdin.Stat()
-	if err != nil || (in.Mode()&os.ModeCharDevice) == 0 {
-		return false
-	}
-	out, err := os.Stdout.Stat()
-	if err != nil || (out.Mode()&os.ModeCharDevice) == 0 {
-		return false
-	}
-	return true
 }
 
 func restoreSecurityDefaults() (string, bool, error) {

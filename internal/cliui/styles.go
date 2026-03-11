@@ -1,6 +1,7 @@
 package cliui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -29,11 +30,24 @@ var (
 )
 
 func RenderStdout(style lipgloss.Style, text string) string {
-	return renderToWriter(os.Stdout, style, text)
+	return StyleStdout(style, text)
 }
 
 func RenderStderr(style lipgloss.Style, text string) string {
+	return StyleStderr(style, text)
+}
+
+func StyleStdout(style lipgloss.Style, text string) string {
+	return renderToWriter(os.Stdout, style, text)
+}
+
+func StyleStderr(style lipgloss.Style, text string) string {
 	return renderToWriter(os.Stderr, style, text)
+}
+
+func Fatal(format string, args ...any) {
+	fmt.Fprint(os.Stderr, StyleStderr(ErrorStyle, fmt.Sprintf(format, args...))+"\n")
+	os.Exit(1)
 }
 
 func renderToWriter(w *os.File, style lipgloss.Style, text string) string {

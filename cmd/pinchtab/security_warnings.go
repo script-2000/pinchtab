@@ -25,6 +25,7 @@ type securityPosture struct {
 	Passed int
 	Total  int
 	Level  string
+	Bar    string
 }
 
 func assessSecurityPosture(cfg *config.RuntimeConfig) securityPosture {
@@ -95,7 +96,22 @@ func assessSecurityPosture(cfg *config.RuntimeConfig) securityPosture {
 		Passed: passed,
 		Total:  len(checks),
 		Level:  securityPostureLevel(passed, len(checks)),
+		Bar:    securityPostureBar(passed, len(checks)),
 	}
+}
+
+func securityPostureBar(passed, total int) string {
+	if total == 0 {
+		return "[          ]"
+	}
+	const width = 10
+	pct := float64(passed) / float64(total)
+	filled := int(pct * width)
+	if filled > width {
+		filled = width
+	}
+	bar := "[" + strings.Repeat("■", filled) + strings.Repeat(" ", width-filled) + "]"
+	return bar
 }
 
 func assessSecurityWarnings(cfg *config.RuntimeConfig) []securityWarning {

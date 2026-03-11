@@ -8,31 +8,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/pinchtab/pinchtab/internal/browsercli"
 )
-
-func TestIsCLICommand(t *testing.T) {
-	valid := []string{"nav", "navigate", "snap", "snapshot", "click", "type",
-		"press", "fill", "hover", "scroll", "select", "focus",
-		"text", "tabs", "tab", "screenshot", "ss", "eval", "evaluate",
-		"pdf", "health", "quick"}
-
-	for _, cmd := range valid {
-		if !isCLICommand(cmd) {
-			t.Errorf("expected %q to be a CLI command", cmd)
-		}
-	}
-
-	invalid := []string{"dashboard", "connect", "config", "server", "run", ""}
-	for _, cmd := range invalid {
-		if isCLICommand(cmd) {
-			t.Errorf("expected %q to NOT be a CLI command", cmd)
-		}
-	}
-}
-
-func TestPrintHelp(t *testing.T) {
-	printHelp()
-}
 
 // mockServer records the last request and returns a configurable response.
 type mockServer struct {
@@ -73,7 +51,7 @@ func TestCLINavigate(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliNavigate(client, m.base(), "", []string{"https://pinchtab.com"})
+	browsercli.Navigate(client, m.base(), "", []string{"https://pinchtab.com"})
 	if m.lastMethod != "POST" {
 		t.Errorf("expected POST, got %s", m.lastMethod)
 	}
@@ -92,7 +70,7 @@ func TestCLINavigateWithFlags(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliNavigate(client, m.base(), "", []string{"https://pinchtab.com", "--new-tab", "--block-images"})
+	browsercli.Navigate(client, m.base(), "", []string{"https://pinchtab.com", "--new-tab", "--block-images"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["newTab"] != true {
@@ -108,7 +86,7 @@ func TestCLINavigateWithBlockAds(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliNavigate(client, m.base(), "", []string{"https://pinchtab.com", "--block-ads"})
+	browsercli.Navigate(client, m.base(), "", []string{"https://pinchtab.com", "--block-ads"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["blockAds"] != true {
@@ -122,7 +100,7 @@ func TestCLIInstanceNavigateUsesTabRoute(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliInstanceNavigate(client, m.base(), "", []string{"inst-123", "https://pinchtab.com"})
+	browsercli.InstanceNavigate(client, m.base(), "", []string{"inst-123", "https://pinchtab.com"})
 
 	if m.lastMethod != "POST" {
 		t.Errorf("expected POST, got %s", m.lastMethod)
@@ -146,7 +124,7 @@ func TestCLISnapshot(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliSnapshot(client, m.base(), "", []string{"-i", "-c"})
+	browsercli.Snapshot(client, m.base(), "", []string{"-i", "-c"})
 	if m.lastMethod != "GET" {
 		t.Errorf("expected GET, got %s", m.lastMethod)
 	}
@@ -166,7 +144,7 @@ func TestCLISnapshotDiff(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliSnapshot(client, m.base(), "", []string{"--diff", "--selector", "main", "--max-tokens", "2000", "--depth", "5"})
+	browsercli.Snapshot(client, m.base(), "", []string{"--diff", "--selector", "main", "--max-tokens", "2000", "--depth", "5"})
 	if !strings.Contains(m.lastQuery, "diff=true") {
 		t.Errorf("expected diff=true, got %s", m.lastQuery)
 	}
@@ -186,7 +164,7 @@ func TestCLISnapshotTabId(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliSnapshot(client, m.base(), "", []string{"--tab", "ABC123"})
+	browsercli.Snapshot(client, m.base(), "", []string{"--tab", "ABC123"})
 	if !strings.Contains(m.lastQuery, "tabId=ABC123") {
 		t.Errorf("expected tabId=ABC123, got %s", m.lastQuery)
 	}
@@ -199,7 +177,7 @@ func TestCLIClick(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "click", []string{"e5"})
+	browsercli.Action(client, m.base(), "", "click", []string{"e5"})
 	if m.lastPath != "/action" {
 		t.Errorf("expected /action, got %s", m.lastPath)
 	}
@@ -218,7 +196,7 @@ func TestCLIClickWaitNav(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "click", []string{"e5", "--wait-nav"})
+	browsercli.Action(client, m.base(), "", "click", []string{"e5", "--wait-nav"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["waitNav"] != true {
@@ -231,7 +209,7 @@ func TestCLIType(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "type", []string{"e12", "hello", "world"})
+	browsercli.Action(client, m.base(), "", "type", []string{"e12", "hello", "world"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["kind"] != "type" {
@@ -250,7 +228,7 @@ func TestCLIPress(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "press", []string{"Enter"})
+	browsercli.Action(client, m.base(), "", "press", []string{"Enter"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["key"] != "Enter" {
@@ -265,7 +243,7 @@ func TestCLIClickWithCSS(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "click", []string{"--css", "button.submit"})
+	browsercli.Action(client, m.base(), "", "click", []string{"--css", "button.submit"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["selector"] != "button.submit" {
@@ -283,7 +261,7 @@ func TestCLIClickWithCSS_AndWaitNav(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "click", []string{"--wait-nav", "--css", "#login-btn"})
+	browsercli.Action(client, m.base(), "", "click", []string{"--wait-nav", "--css", "#login-btn"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["selector"] != "#login-btn" {
@@ -300,7 +278,7 @@ func TestCLIHoverWithCSS(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "hover", []string{"--css", ".nav-item"})
+	browsercli.Action(client, m.base(), "", "hover", []string{"--css", ".nav-item"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["selector"] != ".nav-item" {
@@ -314,7 +292,7 @@ func TestCLIFocusWithCSS(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "focus", []string{"--css", "input[name='email']"})
+	browsercli.Action(client, m.base(), "", "focus", []string{"--css", "input[name='email']"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["selector"] != "input[name='email']" {
@@ -329,7 +307,7 @@ func TestCLIClickRefStillWorks(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "click", []string{"e42"})
+	browsercli.Action(client, m.base(), "", "click", []string{"e42"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["ref"] != "e42" {
@@ -346,7 +324,7 @@ func TestCLIFill(t *testing.T) {
 	client := m.server.Client()
 
 	// Fill with ref
-	cliAction(client, m.base(), "", "fill", []string{"e3", "test value"})
+	browsercli.Action(client, m.base(), "", "fill", []string{"e3", "test value"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["ref"] != "e3" {
@@ -357,7 +335,7 @@ func TestCLIFill(t *testing.T) {
 	}
 
 	// Fill with selector
-	cliAction(client, m.base(), "", "fill", []string{"#email", "user@test.com"})
+	browsercli.Action(client, m.base(), "", "fill", []string{"#email", "user@test.com"})
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["selector"] != "#email" {
 		t.Errorf("expected selector=#email, got %v", body["selector"])
@@ -370,7 +348,7 @@ func TestCLIScroll(t *testing.T) {
 	client := m.server.Client()
 
 	// Scroll by ref
-	cliAction(client, m.base(), "", "scroll", []string{"e20"})
+	browsercli.Action(client, m.base(), "", "scroll", []string{"e20"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["ref"] != "e20" {
@@ -378,14 +356,14 @@ func TestCLIScroll(t *testing.T) {
 	}
 
 	// Scroll by pixels (now sends int, not string)
-	cliAction(client, m.base(), "", "scroll", []string{"800"})
+	browsercli.Action(client, m.base(), "", "scroll", []string{"800"})
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["scrollY"] != float64(800) { // JSON unmarshals numbers as float64
 		t.Errorf("expected scrollY=800, got %v", body["scrollY"])
 	}
 
 	// Scroll by direction aliases.
-	cliAction(client, m.base(), "", "scroll", []string{"down"})
+	browsercli.Action(client, m.base(), "", "scroll", []string{"down"})
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["scrollY"] != float64(800) {
 		t.Errorf("expected down to map to scrollY=800, got %v", body["scrollY"])
@@ -397,7 +375,7 @@ func TestCLISelect(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliAction(client, m.base(), "", "select", []string{"e10", "option2"})
+	browsercli.Action(client, m.base(), "", "select", []string{"e10", "option2"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["ref"] != "e10" {
@@ -416,7 +394,7 @@ func TestCLIText(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliText(client, m.base(), "", nil)
+	browsercli.Text(client, m.base(), "", nil)
 	if m.lastPath != "/text" {
 		t.Errorf("expected /text, got %s", m.lastPath)
 	}
@@ -427,7 +405,7 @@ func TestCLITextRaw(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliText(client, m.base(), "", []string{"--raw"})
+	browsercli.Text(client, m.base(), "", []string{"--raw"})
 	if !strings.Contains(m.lastQuery, "mode=raw") {
 		t.Errorf("expected mode=raw, got %s", m.lastQuery)
 	}
@@ -438,7 +416,7 @@ func TestCLITextTab(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliText(client, m.base(), "", []string{"--tab", "TAB1"})
+	browsercli.Text(client, m.base(), "", []string{"--tab", "TAB1"})
 	if !strings.Contains(m.lastQuery, "tabId=TAB1") {
 		t.Errorf("expected tabId=TAB1, got %s", m.lastQuery)
 	}
@@ -452,7 +430,7 @@ func TestCLITabsList(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliTabs(client, m.base(), "", nil)
+	browsercli.Tabs(client, m.base(), "", nil)
 	if m.lastPath != "/tabs" {
 		t.Errorf("expected /tabs, got %s", m.lastPath)
 	}
@@ -463,7 +441,7 @@ func TestCLITabsNew(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliTabs(client, m.base(), "", []string{"new", "https://pinchtab.com"})
+	browsercli.Tabs(client, m.base(), "", []string{"new", "https://pinchtab.com"})
 	if m.lastPath != "/tab" {
 		t.Errorf("expected /tab, got %s", m.lastPath)
 	}
@@ -485,7 +463,7 @@ func TestCLIEvaluate(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliEvaluate(client, m.base(), "", []string{"document.title"})
+	browsercli.Evaluate(client, m.base(), "", []string{"document.title"})
 	if m.lastPath != "/evaluate" {
 		t.Errorf("expected /evaluate, got %s", m.lastPath)
 	}
@@ -501,7 +479,7 @@ func TestCLIEvaluateMultiWord(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliEvaluate(client, m.base(), "", []string{"1", "+", "2"})
+	browsercli.Evaluate(client, m.base(), "", []string{"1", "+", "2"})
 	var body map[string]any
 	_ = json.Unmarshal([]byte(m.lastBody), &body)
 	if body["expression"] != "1 + 2" {
@@ -518,7 +496,7 @@ func TestCLIScreenshot(t *testing.T) {
 	client := m.server.Client()
 
 	outFile := t.TempDir() + "/test.jpg"
-	cliScreenshot(client, m.base(), "", []string{"-o", outFile, "-q", "50"})
+	browsercli.Screenshot(client, m.base(), "", []string{"-o", outFile, "-q", "50"})
 	if m.lastPath != "/screenshot" {
 		t.Errorf("expected /screenshot, got %s", m.lastPath)
 	}
@@ -543,7 +521,7 @@ func TestCLIPDF(t *testing.T) {
 	client := m.server.Client()
 
 	outFile := t.TempDir() + "/test.pdf"
-	cliPDF(client, m.base(), "", []string{"-o", outFile, "--tab", "tab-abc", "--landscape", "--scale", "0.8"})
+	browsercli.PDF(client, m.base(), "", []string{"-o", outFile, "--tab", "tab-abc", "--landscape", "--scale", "0.8"})
 	if m.lastPath != "/tabs/tab-abc/pdf" {
 		t.Errorf("expected /tabs/tab-abc/pdf, got %s", m.lastPath)
 	}
@@ -589,7 +567,7 @@ func TestCLIPDFAllOptions(t *testing.T) {
 		"--tab", "tab-123",
 	}
 
-	cliPDF(client, m.base(), "", args)
+	browsercli.PDF(client, m.base(), "", args)
 	if m.lastPath != "/tabs/tab-123/pdf" {
 		t.Errorf("expected /tabs/tab-123/pdf, got %s", m.lastPath)
 	}
@@ -635,7 +613,7 @@ func TestCLIHealth(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliHealth(client, m.base(), "")
+	browsercli.Health(client, m.base(), "")
 	if m.lastPath != "/health" {
 		t.Errorf("expected /health, got %s", m.lastPath)
 	}
@@ -648,7 +626,7 @@ func TestCLIAuthHeader(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliHealth(client, m.base(), "my-secret-token")
+	browsercli.Health(client, m.base(), "my-secret-token")
 	auth := m.lastHeaders.Get("Authorization")
 	if auth != "Bearer my-secret-token" {
 		t.Errorf("expected 'Bearer my-secret-token', got %q", auth)
@@ -660,7 +638,7 @@ func TestCLINoAuthHeader(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	cliHealth(client, m.base(), "")
+	browsercli.Health(client, m.base(), "")
 	auth := m.lastHeaders.Get("Authorization")
 	if auth != "" {
 		t.Errorf("expected no auth header, got %q", auth)
@@ -676,7 +654,7 @@ func TestDoGetPrettyPrintsJSON(t *testing.T) {
 	client := m.server.Client()
 
 	// Just verify it doesn't panic with valid JSON
-	doGet(client, m.base(), "", "/health", nil)
+	browsercli.DoGet(client, m.base(), "", "/health", nil)
 }
 
 func TestDoGetNonJSON(t *testing.T) {
@@ -686,7 +664,7 @@ func TestDoGetNonJSON(t *testing.T) {
 	client := m.server.Client()
 
 	// Should handle non-JSON gracefully
-	doGet(client, m.base(), "", "/text", nil)
+	browsercli.DoGet(client, m.base(), "", "/text", nil)
 }
 
 func TestDoPostContentType(t *testing.T) {
@@ -694,7 +672,7 @@ func TestDoPostContentType(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	_ = doPost(client, m.base(), "", "/action", map[string]any{"kind": "click"})
+	_ = browsercli.DoPost(client, m.base(), "", "/action", map[string]any{"kind": "click"})
 	ct := m.lastHeaders.Get("Content-Type")
 	if ct != "application/json" {
 		t.Errorf("expected application/json, got %q", ct)
@@ -710,7 +688,7 @@ func TestCheckServerAndGuide(t *testing.T) {
 	defer m.close()
 	client := m.server.Client()
 
-	result := checkServerAndGuide(client, m.base(), "")
+	result := browsercli.CheckServerAndGuide(client, m.base(), "")
 	if !result {
 		t.Error("expected checkServerAndGuide to return true for working server")
 	}
@@ -727,7 +705,7 @@ func TestCheckServerAndGuide(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 
-	result2 := checkServerAndGuide(client2, m2.base(), "")
+	result2 := browsercli.CheckServerAndGuide(client2, m2.base(), "")
 
 	_ = w.Close()
 	os.Stderr = oldStderr
@@ -751,7 +729,7 @@ func TestResolveInstanceBase(t *testing.T) {
 	client := orch.server.Client()
 	_ = client // resolveInstanceBase builds its own client
 
-	got := resolveInstanceBase(orch.base(), "", "abc123", "127.0.0.1")
+	got := browsercli.ResolveInstanceBase(orch.base(), "", "abc123", "127.0.0.1")
 
 	if orch.lastPath != "/instances/abc123" {
 		t.Errorf("expected GET /instances/abc123, got %s", orch.lastPath)
@@ -767,7 +745,7 @@ func TestResolveInstanceBase_ForwardsToken(t *testing.T) {
 	orch.response = `{"id":"xyz","port":"9902","status":"running"}`
 	defer orch.close()
 
-	resolveInstanceBase(orch.base(), "my-token", "xyz", "localhost")
+	browsercli.ResolveInstanceBase(orch.base(), "my-token", "xyz", "localhost")
 
 	authHeader := orch.lastHeaders.Get("Authorization")
 	if authHeader != "Bearer my-token" {

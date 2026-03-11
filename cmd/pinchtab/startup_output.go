@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/pinchtab/pinchtab/internal/cliui"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/pinchtab/pinchtab/internal/cliui"
 	"github.com/pinchtab/pinchtab/internal/config"
 )
 
@@ -30,9 +30,9 @@ func printStartupBanner(cfg *config.RuntimeConfig, opts startupBannerOptions) {
 	alloc := blankIfEmpty(opts.Allocation, "none")
 	writeBannerf("  %s  %s\n", styleLabel("str,plc"), styleValue(fmt.Sprintf("%s,%s", strat, alloc)))
 
-	daemonStatus := styleStdout(cliWarningStyle, "not installed")
+	daemonStatus := cliui.StyleStdout(cliui.WarningStyle, "not installed")
 	if IsDaemonInstalled() {
-		daemonStatus = styleStdout(cliSuccessStyle, "ok")
+		daemonStatus = cliui.StyleStdout(cliui.SuccessStyle, "ok")
 	}
 	writeBannerf("  %s  %s\n", styleLabel("daemon"), daemonStatus)
 
@@ -45,42 +45,11 @@ func printStartupBanner(cfg *config.RuntimeConfig, opts startupBannerOptions) {
 
 func printSecuritySummary(w io.Writer, cfg *config.RuntimeConfig, prefix string) {
 	posture := assessSecurityPosture(cfg)
+	writeSummaryf(w, "\n%s%s %s  %s\n", prefix, styleHeading("Security posture"), styleSecurityBar(posture.Level, posture.Bar), styleSecurityLevel(posture.Level))
 
-	writeSummaryf(
-		w,
-		"%s%s  %s  %s\n",
-		prefix,
-		styleLabel("security"),
-		styleSecurityLevel(posture.Level),
-		styleSecurityBar(posture.Level, renderPostureBar(posture.Passed, posture.Total)),
-	)
 	for _, check := range posture.Checks {
-		writeSummaryf(
-			w,
-			"%s  [%s] %s %s\n",
-			prefix,
-			styleMarker(check.Passed),
-			styleCheckLabel(check.Label),
-			styleCheckDetail(check.Passed, check.Detail),
-		)
+		writeSummaryf(w, "%s  %s %s %s\n", prefix, styleMarker(check.Passed), styleCheckLabel(check.Label), styleCheckDetail(check.Passed, check.Detail))
 	}
-}
-
-func renderPostureBar(passed, total int) string {
-	if total <= 0 {
-		return "[--------]"
-	}
-	var b strings.Builder
-	b.WriteByte('[')
-	for i := 0; i < total; i++ {
-		if i < passed {
-			b.WriteByte('#')
-		} else {
-			b.WriteByte('-')
-		}
-	}
-	b.WriteByte(']')
-	return b.String()
 }
 
 func blankIfEmpty(value, fallback string) string {
@@ -106,38 +75,62 @@ func writeSummaryf(w io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(w, format, args...)
 }
 
+func styleHeading(text string) string {
+	return applyStyle(text, cliui.HeadingStyle)
+}
+
+func styleCommand(text string) string {
+	return applyStyle(text, cliui.CommandStyle)
+}
+
+func styleMuted(text string) string {
+	return applyStyle(text, cliui.MutedStyle)
+}
+
+func styleSuccess(text string) string {
+	return applyStyle(text, cliui.SuccessStyle)
+}
+
+func styleWarning(text string) string {
+	return applyStyle(text, cliui.WarningStyle)
+}
+
+func styleError(text string) string {
+	return applyStyle(text, cliui.ErrorStyle)
+}
+
 func styleLogo(text string) string {
-	return applyStyle(text, lipgloss.NewStyle().Foreground(cliui.ColorAccent).Bold(true))
+	return applyStyle(text, cliui.HeadingStyle)
 }
 
 func styleMode(text string) string {
-	return applyStyle(text, lipgloss.NewStyle().Foreground(cliui.ColorTextMuted))
+	return applyStyle(text, cliui.CommandStyle)
 }
 
 func styleLabel(text string) string {
-	return applyStyle(fmt.Sprintf("%-8s", text), lipgloss.NewStyle().Foreground(cliui.ColorTextMuted))
+	return applyStyle(fmt.Sprintf("%-8s", text), cliui.MutedStyle)
 }
 
 func styleValue(text string) string {
-	return applyStyle(text, lipgloss.NewStyle().Foreground(cliui.ColorTextPrimary).Bold(true))
+	return applyStyle(text, cliui.ValueStyle)
 }
 
 func styleCheckLabel(text string) string {
-	return applyStyle(fmt.Sprintf("%-20s", text), lipgloss.NewStyle().Foreground(cliui.ColorTextMuted))
+	return applyStyle(fmt.Sprintf("%-20s", text), cliui.MutedStyle)
 }
 
 func styleCheckDetail(passed bool, text string) string {
 	if passed {
-		return applyStyle(text, lipgloss.NewStyle().Foreground(cliui.ColorSuccess))
+		return applyStyle(text, cliui.SuccessStyle)
 	}
-	return applyStyle(text, lipgloss.NewStyle().Foreground(cliui.ColorWarning))
+	return applyStyle(text, cliui.WarningStyle)
 }
 
 func styleMarker(passed bool) string {
 	if passed {
-		return applyStyle("ok", lipgloss.NewStyle().Foreground(cliui.ColorSuccess).Bold(true))
+		return applyStyle("ok", cliui.SuccessStyle)
 	}
-	return applyStyle("!!", lipgloss.NewStyle().Foreground(cliui.ColorDanger).Bold(true))
+	return applyStyle("!!", cliui.ErrorStyle)
 }
 
 func styleSecurityLevel(level string) string {

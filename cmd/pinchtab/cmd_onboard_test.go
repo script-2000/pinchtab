@@ -107,43 +107,6 @@ func TestEnsureOnboardConfigRecoversExistingSecuritySettings(t *testing.T) {
 	}
 }
 
-func TestSaveSelectedSensitiveCapabilities(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "pinchtab", "config.json")
-	t.Setenv("PINCHTAB_CONFIG", configPath)
-
-	fc := config.DefaultFileConfig()
-	token := "test-token"
-	fc.Server.Token = token
-	if err := config.SaveFileConfig(&fc, configPath); err != nil {
-		t.Fatalf("SaveFileConfig returned error: %v", err)
-	}
-
-	if err := saveSelectedSensitiveCapabilities(configPath, []string{"evaluate", "download"}); err != nil {
-		t.Fatalf("saveSelectedSensitiveCapabilities returned error: %v", err)
-	}
-
-	got, _, err := config.LoadFileConfig()
-	if err != nil {
-		t.Fatalf("LoadFileConfig returned error: %v", err)
-	}
-
-	if got.Security.AllowEvaluate == nil || !*got.Security.AllowEvaluate {
-		t.Fatal("expected allowEvaluate to be true")
-	}
-	if got.Security.AllowDownload == nil || !*got.Security.AllowDownload {
-		t.Fatal("expected allowDownload to be true")
-	}
-	if got.Security.AllowMacro == nil || *got.Security.AllowMacro {
-		t.Fatal("expected allowMacro to be false")
-	}
-	if got.Security.AllowScreencast == nil || *got.Security.AllowScreencast {
-		t.Fatal("expected allowScreencast to be false")
-	}
-	if got.Security.AllowUpload == nil || *got.Security.AllowUpload {
-		t.Fatal("expected allowUpload to be false")
-	}
-}
-
 func TestRenderOnboardGuideIncludesSecurityValues(t *testing.T) {
 	cfg := testRuntimeConfig()
 	output := renderOnboardGuide("/tmp/pinchtab/config.json", cfg, onboardConfigCreated, true)
