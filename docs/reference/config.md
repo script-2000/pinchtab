@@ -169,10 +169,16 @@ Current nested config shape:
     "defaultProfile": "default"
   },
   "multiInstance": {
-    "strategy": "simple",
+    "strategy": "always-on",
     "allocationPolicy": "fcfs",
     "instancePortStart": 9868,
-    "instancePortEnd": 9968
+    "instancePortEnd": 9968,
+    "restart": {
+      "maxRestarts": 20,
+      "initBackoffSec": 2,
+      "maxBackoffSec": 60,
+      "stableAfterSec": 300
+    }
   },
   "timeouts": {
     "actionSec": 30,
@@ -192,7 +198,7 @@ Current nested config shape:
 | `instanceDefaults` | Default behavior for managed instances |
 | `security` | Sensitive feature gates, attach policy, and IDPI |
 | `profiles` | Profile storage defaults |
-| `multiInstance` | Strategy, allocation, and instance port range |
+| `multiInstance` | Strategy, allocation, instance port range, and restart policy |
 | `timeouts` | Runtime timeouts |
 
 ## Common Examples
@@ -300,8 +306,10 @@ Use `pinchtab config init` to create a nested config file.
 - `instanceDefaults.maxParallelTabs >= 0`
 - valid `multiInstance.strategy`
 - valid `multiInstance.allocationPolicy`
+- valid `multiInstance.restart.*` values
 - valid `security.attach.allowSchemes`
 - `multiInstance.instancePortStart <= multiInstance.instancePortEnd`
+- `multiInstance.restart.initBackoffSec <= multiInstance.restart.maxBackoffSec`
 - non-negative timeout values
 
 Valid enum values:
@@ -311,7 +319,7 @@ Valid enum values:
 | `instanceDefaults.mode` | `headless`, `headed` |
 | `instanceDefaults.stealthLevel` | `light`, `medium`, `full` |
 | `instanceDefaults.tabEvictionPolicy` | `reject`, `close_oldest`, `close_lru` (default) |
-| `multiInstance.strategy` | `simple`, `explicit`, `simple-autorestart` |
+| `multiInstance.strategy` | `simple`, `explicit`, `simple-autorestart`, `always-on` (default) |
 | `multiInstance.allocationPolicy` | `fcfs`, `round_robin`, `random` |
 | `security.attach.allowSchemes` | `ws`, `wss` |
 

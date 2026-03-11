@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/orchestrator"
 )
 
@@ -23,6 +24,19 @@ type Orchestrator interface {
 // constructing a strategy and injects the orchestrator before Start().
 type OrchestratorAware interface {
 	SetOrchestrator(o *orchestrator.Orchestrator)
+}
+
+// LaunchAware is implemented by strategies that manage instance startup
+// themselves and therefore should suppress the dashboard's separate
+// PINCHTAB_AUTO_LAUNCH fallback.
+type LaunchAware interface {
+	HandlesLaunch() bool
+}
+
+// RuntimeConfigAware is implemented by strategies that need access to
+// runtime configuration at construction time.
+type RuntimeConfigAware interface {
+	SetRuntimeConfig(cfg *config.RuntimeConfig)
 }
 
 // Strategy defines a browser allocation approach.

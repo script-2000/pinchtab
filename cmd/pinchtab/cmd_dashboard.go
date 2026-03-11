@@ -24,6 +24,7 @@ import (
 	"github.com/pinchtab/pinchtab/internal/web"
 
 	// Register strategies via init().
+	_ "github.com/pinchtab/pinchtab/internal/strategy/alwayson"
 	_ "github.com/pinchtab/pinchtab/internal/strategy/autorestart"
 	_ "github.com/pinchtab/pinchtab/internal/strategy/explicit"
 	_ "github.com/pinchtab/pinchtab/internal/strategy/simple"
@@ -90,6 +91,9 @@ func runDashboard(cfg *config.RuntimeConfig) {
 		if err != nil {
 			slog.Warn("unknown strategy, falling back to default", "strategy", cfg.Strategy, "err", err)
 		} else {
+			if runtimeAware, ok := strat.(strategy.RuntimeConfigAware); ok {
+				runtimeAware.SetRuntimeConfig(cfg)
+			}
 			// Inject orchestrator dependency.
 			if setter, ok := strat.(strategy.OrchestratorAware); ok {
 				setter.SetOrchestrator(orch)
@@ -165,7 +169,7 @@ func runDashboard(cfg *config.RuntimeConfig) {
 	if activeStrategy != nil {
 		if err := activeStrategy.Start(context.Background()); err != nil {
 			slog.Error("strategy start failed", "strategy", activeStrategy.Name(), "err", err)
-		} else {
+		} else if launchAware, ok := activeStrategy.(strategy.LaunchAware); ok && launchAware.HandlesLaunch() {
 			strategyHandlesLaunch = true
 		}
 	}
@@ -207,7 +211,7 @@ func runDashboard(cfg *config.RuntimeConfig) {
 			slog.Info("auto-launched instance", "profile", profileToLaunch, "id", inst.ID, "port", inst.Port, "headless", headlessDefault)
 		}()
 	} else if !strategyHandlesLaunch {
-		slog.Info("dashboard auto-launch disabled", "hint", "set PINCHTAB_AUTO_LAUNCH=1 or PINCHTAB_STRATEGY=simple-autorestart to enable")
+		slog.Info("dashboard auto-launch disabled", "hint", "set PINCHTAB_AUTO_LAUNCH=1 or PINCHTAB_STRATEGY=always-on to enable")
 	}
 
 	shutdownOnce := &sync.Once{}

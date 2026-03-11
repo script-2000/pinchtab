@@ -21,6 +21,12 @@ func TestValidateFileConfig_Valid(t *testing.T) {
 		MultiInstance: MultiInstanceConfig{
 			Strategy:         "simple",
 			AllocationPolicy: "fcfs",
+			Restart: MultiInstanceRestartConfig{
+				MaxRestarts:    intPtr(20),
+				InitBackoffSec: intPtr(2),
+				MaxBackoffSec:  intPtr(60),
+				StableAfterSec: intPtr(300),
+			},
 		},
 		Timeouts: TimeoutsConfig{
 			ActionSec:   30,
@@ -33,6 +39,65 @@ func TestValidateFileConfig_Valid(t *testing.T) {
 		t.Errorf("expected no errors for valid config, got: %v", errs)
 	}
 }
+
+func TestValidateFileConfig_RestartPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		restart MultiInstanceRestartConfig
+		wantErr bool
+	}{
+		{
+			name: "bounded",
+			restart: MultiInstanceRestartConfig{
+				MaxRestarts:    intPtr(10),
+				InitBackoffSec: intPtr(2),
+				MaxBackoffSec:  intPtr(60),
+				StableAfterSec: intPtr(300),
+			},
+			wantErr: false,
+		},
+		{
+			name: "unlimited",
+			restart: MultiInstanceRestartConfig{
+				MaxRestarts:    intPtr(-1),
+				InitBackoffSec: intPtr(2),
+				MaxBackoffSec:  intPtr(60),
+				StableAfterSec: intPtr(300),
+			},
+			wantErr: false,
+		},
+		{
+			name: "zero max restarts invalid",
+			restart: MultiInstanceRestartConfig{
+				MaxRestarts: intPtr(0),
+			},
+			wantErr: true,
+		},
+		{
+			name: "max backoff lower than init invalid",
+			restart: MultiInstanceRestartConfig{
+				InitBackoffSec: intPtr(10),
+				MaxBackoffSec:  intPtr(5),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := &FileConfig{
+				MultiInstance: MultiInstanceConfig{Restart: tt.restart},
+			}
+			errs := ValidateFileConfig(fc)
+			hasErr := len(errs) > 0
+			if hasErr != tt.wantErr {
+				t.Fatalf("got error=%v, want %v (errs: %v)", hasErr, tt.wantErr, errs)
+			}
+		})
+	}
+}
+
+func intPtr(v int) *int { return &v }
 
 func TestValidateFileConfig_InvalidPort(t *testing.T) {
 	tests := []struct {
@@ -120,6 +185,7 @@ func TestValidateFileConfig_InvalidStrategy(t *testing.T) {
 		{"simple", false},
 		{"explicit", false},
 		{"simple-autorestart", false},
+		{"always-on", false},
 		{"", false},
 		{"auto", true},
 		{"default", true},

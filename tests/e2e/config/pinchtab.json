@@ -9,6 +9,16 @@
   "instanceDefaults": {
     "maxTabs": 10
   },
+  "multiInstance": {
+    "strategy": "always-on",
+    "allocationPolicy": "fcfs",
+    "restart": {
+      "maxRestarts": 20,
+      "initBackoffSec": 2,
+      "maxBackoffSec": 60,
+      "stableAfterSec": 300
+    }
+  },
   "security": {
     "allowEvaluate": true,
     "allowDownload": true,

@@ -14,6 +14,10 @@ echo "FIXTURES_URL: ${FIXTURES_URL}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
+wait_for_strategy_running "${PINCHTAB_URL}" "/always-on/status"
+wait_for_strategy_running "${PINCHTAB_SECURE_URL}" "/always-on/status"
+echo ""
+
 # Find and run all test scripts in order
 for script in "${SCRIPT_DIR}"/[0-9][0-9]-*.sh; do
   if [ -f "$script" ]; then

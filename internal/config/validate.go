@@ -39,6 +39,39 @@ func ValidateFileConfig(fc *FileConfig) []error {
 			})
 		}
 	}
+	if fc.MultiInstance.Restart.MaxRestarts != nil {
+		if *fc.MultiInstance.Restart.MaxRestarts != -1 && *fc.MultiInstance.Restart.MaxRestarts < 1 {
+			errs = append(errs, ValidationError{
+				Field:   "multiInstance.restart.maxRestarts",
+				Message: fmt.Sprintf("must be >= 1 or -1 for unlimited (got %d)", *fc.MultiInstance.Restart.MaxRestarts),
+			})
+		}
+	}
+	if fc.MultiInstance.Restart.InitBackoffSec != nil && *fc.MultiInstance.Restart.InitBackoffSec < 1 {
+		errs = append(errs, ValidationError{
+			Field:   "multiInstance.restart.initBackoffSec",
+			Message: fmt.Sprintf("must be >= 1 (got %d)", *fc.MultiInstance.Restart.InitBackoffSec),
+		})
+	}
+	if fc.MultiInstance.Restart.MaxBackoffSec != nil && *fc.MultiInstance.Restart.MaxBackoffSec < 1 {
+		errs = append(errs, ValidationError{
+			Field:   "multiInstance.restart.maxBackoffSec",
+			Message: fmt.Sprintf("must be >= 1 (got %d)", *fc.MultiInstance.Restart.MaxBackoffSec),
+		})
+	}
+	if fc.MultiInstance.Restart.StableAfterSec != nil && *fc.MultiInstance.Restart.StableAfterSec < 1 {
+		errs = append(errs, ValidationError{
+			Field:   "multiInstance.restart.stableAfterSec",
+			Message: fmt.Sprintf("must be >= 1 (got %d)", *fc.MultiInstance.Restart.StableAfterSec),
+		})
+	}
+	if fc.MultiInstance.Restart.InitBackoffSec != nil && fc.MultiInstance.Restart.MaxBackoffSec != nil &&
+		*fc.MultiInstance.Restart.InitBackoffSec > *fc.MultiInstance.Restart.MaxBackoffSec {
+		errs = append(errs, ValidationError{
+			Field:   "multiInstance.restart.initBackoffSec/maxBackoffSec",
+			Message: fmt.Sprintf("init backoff (%d) must be <= max backoff (%d)", *fc.MultiInstance.Restart.InitBackoffSec, *fc.MultiInstance.Restart.MaxBackoffSec),
+		})
+	}
 
 	// Instance defaults validation
 	if fc.InstanceDefaults.Mode != "" && fc.InstanceDefaults.Mode != "headless" && fc.InstanceDefaults.Mode != "headed" {
@@ -81,7 +114,7 @@ func ValidateFileConfig(fc *FileConfig) []error {
 		if !isValidStrategy(fc.MultiInstance.Strategy) {
 			errs = append(errs, ValidationError{
 				Field:   "multiInstance.strategy",
-				Message: fmt.Sprintf("invalid value %q (must be simple, explicit, or simple-autorestart)", fc.MultiInstance.Strategy),
+				Message: fmt.Sprintf("invalid value %q (must be simple, explicit, simple-autorestart, or always-on)", fc.MultiInstance.Strategy),
 			})
 		}
 	}
@@ -192,7 +225,7 @@ func isValidEvictionPolicy(policy string) bool {
 
 func isValidStrategy(strategy string) bool {
 	switch strategy {
-	case "simple", "explicit", "simple-autorestart":
+	case "simple", "explicit", "simple-autorestart", "always-on":
 		return true
 	default:
 		return false
@@ -229,7 +262,7 @@ func ValidEvictionPolicies() []string {
 
 // ValidStrategies returns all valid strategy values.
 func ValidStrategies() []string {
-	return []string{"simple", "explicit", "simple-autorestart"}
+	return []string{"simple", "explicit", "simple-autorestart", "always-on"}
 }
 
 // validateIDPIConfig validates the security.idpi sub-section.

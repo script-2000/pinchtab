@@ -23,6 +23,7 @@ const (
 	HealthTimeoutCI = 60 * time.Second
 	ShutdownTimeout = 10 * time.Second
 	InstanceTimeout = 30 * time.Second
+	StrategyTimeout = 60 * time.Second
 )
 
 // ServerConfig mirrors key fields from internal/config.RuntimeConfig for test setup.
@@ -49,7 +50,7 @@ type ServerConfig struct {
 	IDPI appconfig.IDPIConfig
 
 	// Orchestrator
-	Strategy         string // default: "" (uses config default: "simple")
+	Strategy         string // default: "" (uses config default: "always-on")
 	AllocationPolicy string // default: "" (uses config default: "fcfs")
 }
 
@@ -265,6 +266,40 @@ func WaitForHealth(base string, timeout time.Duration) bool {
 			if healthy {
 				return true
 			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// WaitForStrategyStatus polls a strategy status endpoint until it reports the
+// requested status or the timeout expires.
+func WaitForStrategyStatus(base, path, want string, timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	url := strings.TrimRight(base, "/") + path
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			var payload struct {
+				Status string `json:"status"`
+			}
+			if resp.StatusCode == 200 && json.NewDecoder(resp.Body).Decode(&payload) == nil && payload.Status == want {
+				_ = resp.Body.Close()
+				return true
+			}
+			_ = resp.Body.Close()
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

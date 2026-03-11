@@ -31,9 +31,10 @@ func TestMain(m *testing.M) {
 
 	client = testutil.NewClient(server.URL)
 
-	// Launch a test instance for orchestrator-mode tests
-	if _, err := testutil.LaunchInstance(server.URL); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to launch test instance: %v\n", err)
+	// Wait for the default always-on instance to reach running state before
+	// tests issue shorthand requests like /navigate and /snapshot.
+	if !testutil.WaitForStrategyStatus(server.URL, "/always-on/status", "running", testutil.StrategyTimeout) {
+		fmt.Fprintf(os.Stderr, "always-on strategy did not become ready within %v\n", testutil.StrategyTimeout)
 		server.Stop()
 		stopFixtureSite()
 		os.Exit(1)

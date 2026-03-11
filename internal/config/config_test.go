@@ -96,11 +96,17 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.AllowEvaluate {
 		t.Errorf("default AllowEvaluate = %v, want false", cfg.AllowEvaluate)
 	}
-	if cfg.Strategy != "simple" {
-		t.Errorf("default Strategy = %v, want simple", cfg.Strategy)
+	if cfg.Strategy != "always-on" {
+		t.Errorf("default Strategy = %v, want always-on", cfg.Strategy)
 	}
 	if cfg.AllocationPolicy != "fcfs" {
 		t.Errorf("default AllocationPolicy = %v, want fcfs", cfg.AllocationPolicy)
+	}
+	if cfg.RestartMaxRestarts != 20 {
+		t.Errorf("default RestartMaxRestarts = %v, want 20", cfg.RestartMaxRestarts)
+	}
+	if cfg.RestartInitBackoff != 2*time.Second {
+		t.Errorf("default RestartInitBackoff = %v, want 2s", cfg.RestartInitBackoff)
 	}
 	if cfg.TabEvictionPolicy != "close_lru" {
 		t.Errorf("default TabEvictionPolicy = %v, want close_lru", cfg.TabEvictionPolicy)
@@ -187,8 +193,11 @@ func TestDefaultFileConfig(t *testing.T) {
 	if fc.InstanceDefaults.Mode != "headless" {
 		t.Errorf("DefaultFileConfig.InstanceDefaults.Mode = %v, want headless", fc.InstanceDefaults.Mode)
 	}
-	if fc.MultiInstance.Strategy != "simple" {
-		t.Errorf("DefaultFileConfig.MultiInstance.Strategy = %v, want simple", fc.MultiInstance.Strategy)
+	if fc.MultiInstance.Strategy != "always-on" {
+		t.Errorf("DefaultFileConfig.MultiInstance.Strategy = %v, want always-on", fc.MultiInstance.Strategy)
+	}
+	if fc.MultiInstance.Restart.MaxRestarts == nil || *fc.MultiInstance.Restart.MaxRestarts != 20 {
+		t.Errorf("DefaultFileConfig.MultiInstance.Restart.MaxRestarts = %v, want 20", formatIntPtr(fc.MultiInstance.Restart.MaxRestarts))
 	}
 	if len(fc.Security.Attach.AllowSchemes) != 2 || fc.Security.Attach.AllowSchemes[0] != "ws" || fc.Security.Attach.AllowSchemes[1] != "wss" {
 		t.Errorf("DefaultFileConfig.Security.Attach.AllowSchemes = %v, want [ws wss]", fc.Security.Attach.AllowSchemes)
@@ -257,7 +266,13 @@ func TestLoadNestedConfig(t *testing.T) {
 		},
 		"multiInstance": {
 			"strategy": "explicit",
-			"allocationPolicy": "round_robin"
+			"allocationPolicy": "round_robin",
+			"restart": {
+				"maxRestarts": 7,
+				"initBackoffSec": 4,
+				"maxBackoffSec": 90,
+				"stableAfterSec": 420
+			}
 		},
 		"timeouts": {
 			"actionSec": 60,
@@ -306,6 +321,18 @@ func TestLoadNestedConfig(t *testing.T) {
 	}
 	if cfg.AllocationPolicy != "round_robin" {
 		t.Errorf("nested AllocationPolicy = %v, want round_robin", cfg.AllocationPolicy)
+	}
+	if cfg.RestartMaxRestarts != 7 {
+		t.Errorf("nested RestartMaxRestarts = %v, want 7", cfg.RestartMaxRestarts)
+	}
+	if cfg.RestartInitBackoff != 4*time.Second {
+		t.Errorf("nested RestartInitBackoff = %v, want 4s", cfg.RestartInitBackoff)
+	}
+	if cfg.RestartMaxBackoff != 90*time.Second {
+		t.Errorf("nested RestartMaxBackoff = %v, want 90s", cfg.RestartMaxBackoff)
+	}
+	if cfg.RestartStableAfter != 420*time.Second {
+		t.Errorf("nested RestartStableAfter = %v, want 420s", cfg.RestartStableAfter)
 	}
 	if cfg.AttachEnabled != true {
 		t.Errorf("nested AttachEnabled = %v, want true", cfg.AttachEnabled)

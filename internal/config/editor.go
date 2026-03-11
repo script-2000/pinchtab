@@ -172,6 +172,10 @@ func setProfilesField(p *ProfilesConfig, field, value string) error {
 }
 
 func setMultiInstanceField(o *MultiInstanceConfig, field, value string) error {
+	if strings.HasPrefix(field, "restart.") {
+		return setMultiInstanceRestartField(&o.Restart, strings.TrimPrefix(field, "restart."), value)
+	}
+
 	switch field {
 	case "strategy":
 		o.Strategy = value
@@ -191,6 +195,27 @@ func setMultiInstanceField(o *MultiInstanceConfig, field, value string) error {
 		o.InstancePortEnd = &n
 	default:
 		return fmt.Errorf("unknown field multiInstance.%s", field)
+	}
+	return nil
+}
+
+func setMultiInstanceRestartField(r *MultiInstanceRestartConfig, field, value string) error {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("multiInstance.restart.%s must be a number: %w", field, err)
+	}
+
+	switch field {
+	case "maxRestarts":
+		r.MaxRestarts = &n
+	case "initBackoffSec":
+		r.InitBackoffSec = &n
+	case "maxBackoffSec":
+		r.MaxBackoffSec = &n
+	case "stableAfterSec":
+		r.StableAfterSec = &n
+	default:
+		return fmt.Errorf("unknown field multiInstance.restart.%s", field)
 	}
 	return nil
 }
@@ -361,6 +386,10 @@ func getProfilesField(p *ProfilesConfig, field string) (string, error) {
 }
 
 func getMultiInstanceField(o *MultiInstanceConfig, field string) (string, error) {
+	if strings.HasPrefix(field, "restart.") {
+		return getMultiInstanceRestartField(&o.Restart, strings.TrimPrefix(field, "restart."))
+	}
+
 	switch field {
 	case "strategy":
 		return o.Strategy, nil
@@ -372,6 +401,21 @@ func getMultiInstanceField(o *MultiInstanceConfig, field string) (string, error)
 		return formatIntPtr(o.InstancePortEnd), nil
 	default:
 		return "", fmt.Errorf("unknown field multiInstance.%s", field)
+	}
+}
+
+func getMultiInstanceRestartField(r *MultiInstanceRestartConfig, field string) (string, error) {
+	switch field {
+	case "maxRestarts":
+		return formatIntPtr(r.MaxRestarts), nil
+	case "initBackoffSec":
+		return formatIntPtr(r.InitBackoffSec), nil
+	case "maxBackoffSec":
+		return formatIntPtr(r.MaxBackoffSec), nil
+	case "stableAfterSec":
+		return formatIntPtr(r.StableAfterSec), nil
+	default:
+		return "", fmt.Errorf("unknown field multiInstance.restart.%s", field)
 	}
 }
 

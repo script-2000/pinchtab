@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/orchestrator"
 	"github.com/pinchtab/pinchtab/internal/proxy"
 	"github.com/pinchtab/pinchtab/internal/strategy"
@@ -24,13 +25,15 @@ import (
 )
 
 const (
-	defaultMaxRestarts = 3
-	defaultInitBackoff = 2 * time.Second
-	defaultMaxBackoff  = 60 * time.Second
-	defaultStableAfter = 5 * time.Minute
-	defaultProfileName = "default"
-	healthPollInterval = 500 * time.Millisecond
-	healthPollTimeout  = 30 * time.Second
+	defaultMaxRestarts  = 3
+	defaultInitBackoff  = 2 * time.Second
+	defaultMaxBackoff   = 60 * time.Second
+	defaultStableAfter  = 5 * time.Minute
+	defaultProfileName  = "default"
+	defaultStrategyName = "simple-autorestart"
+	defaultStatusPath   = "/autorestart/status"
+	healthPollInterval  = 500 * time.Millisecond
+	healthPollTimeout   = 30 * time.Second
 )
 
 func init() {
@@ -41,13 +44,15 @@ func init() {
 
 // AutorestartConfig configures the autorestart behavior.
 type AutorestartConfig struct {
-	MaxRestarts int           // Max consecutive restarts before giving up (0 = use default 3)
-	InitBackoff time.Duration // Initial backoff between restarts (0 = use default 2s)
-	MaxBackoff  time.Duration // Maximum backoff cap (0 = use default 60s)
-	StableAfter time.Duration // Reset counter after running this long (0 = use default 5m)
-	ProfileName string        // Profile to launch (empty = "default")
-	Headless    bool          // Chrome headless mode
-	HeadlessSet bool          // Whether Headless was explicitly set (false = use default true)
+	MaxRestarts  int           // Max consecutive restarts before giving up (0 = use default 3, <0 = unlimited)
+	InitBackoff  time.Duration // Initial backoff between restarts (0 = use default 2s)
+	MaxBackoff   time.Duration // Maximum backoff cap (0 = use default 60s)
+	StableAfter  time.Duration // Reset counter after running this long (0 = use default 5m)
+	ProfileName  string        // Profile to launch (empty = "default")
+	Headless     bool          // Chrome headless mode
+	HeadlessSet  bool          // Whether Headless was explicitly set (false = use default true)
+	StrategyName string        // Exposed strategy identifier (empty = "simple-autorestart")
+	StatusPath   string        // Status endpoint path (empty = "/autorestart/status")
 }
 
 // RestartState tracks the restart state of the managed instance.
@@ -78,7 +83,7 @@ type Strategy struct {
 
 // New creates a new autorestart strategy with the given config.
 func New(cfg AutorestartConfig) *Strategy {
-	if cfg.MaxRestarts <= 0 {
+	if cfg.MaxRestarts == 0 {
 		cfg.MaxRestarts = defaultMaxRestarts
 	}
 	if cfg.InitBackoff <= 0 {
@@ -96,13 +101,38 @@ func New(cfg AutorestartConfig) *Strategy {
 	if !cfg.HeadlessSet {
 		cfg.Headless = true
 	}
+	if cfg.StrategyName == "" {
+		cfg.StrategyName = defaultStrategyName
+	}
+	if cfg.StatusPath == "" {
+		cfg.StatusPath = defaultStatusPath
+	}
 
 	return &Strategy{
 		config: cfg,
 	}
 }
 
-func (s *Strategy) Name() string { return "simple-autorestart" }
+func (s *Strategy) Name() string        { return s.config.StrategyName }
+func (s *Strategy) HandlesLaunch() bool { return true }
+
+func (s *Strategy) SetRuntimeConfig(cfg *config.RuntimeConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.RestartMaxRestarts != 0 {
+		s.config.MaxRestarts = cfg.RestartMaxRestarts
+	}
+	if cfg.RestartInitBackoff > 0 {
+		s.config.InitBackoff = cfg.RestartInitBackoff
+	}
+	if cfg.RestartMaxBackoff > 0 {
+		s.config.MaxBackoff = cfg.RestartMaxBackoff
+	}
+	if cfg.RestartStableAfter > 0 {
+		s.config.StableAfter = cfg.RestartStableAfter
+	}
+}
 
 // SetOrchestrator injects the orchestrator after construction.
 func (s *Strategy) SetOrchestrator(o *orchestrator.Orchestrator) {
@@ -164,7 +194,7 @@ func (s *Strategy) RegisterRoutes(mux *http.ServeMux) {
 	strategy.RegisterCapabilityRoute(mux, "POST /macro", s.orch.AllowsMacro(), "macro", "security.allowMacro", "macro_disabled", s.proxyToManaged)
 
 	mux.HandleFunc("GET /tabs", s.handleTabs)
-	mux.HandleFunc("GET /autorestart/status", s.handleStatus)
+	mux.HandleFunc("GET "+s.config.StatusPath, s.handleStatus)
 }
 
 // State returns the current restart state for observability.
@@ -173,7 +203,7 @@ func (s *Strategy) State() RestartState {
 	defer s.mu.Unlock()
 
 	status := "running"
-	if s.restartCount >= s.config.MaxRestarts {
+	if s.hasRestartLimit() && s.restartCount >= s.config.MaxRestarts {
 		status = "crashed"
 	} else if s.restarting {
 		status = "restarting"
@@ -205,7 +235,7 @@ func (s *Strategy) launchInitial() {
 
 	inst, err := s.orch.Launch(s.config.ProfileName, "", s.config.Headless, nil)
 	if err != nil {
-		slog.Error("autorestart: initial launch failed", "profile", s.config.ProfileName, "err", err)
+		slog.Error(s.logPrefix("initial launch failed"), "profile", s.config.ProfileName, "err", err)
 		return
 	}
 
@@ -214,7 +244,7 @@ func (s *Strategy) launchInitial() {
 	s.lastStart = time.Now()
 	s.mu.Unlock()
 
-	slog.Info("autorestart: instance launched", "id", inst.ID, "profile", s.config.ProfileName)
+	slog.Info(s.logPrefix("instance launched"), "id", inst.ID, "profile", s.config.ProfileName)
 }
 
 // handleEvent processes orchestrator lifecycle events.
@@ -240,7 +270,7 @@ func (s *Strategy) handleEvent(evt orchestrator.InstanceEvent) {
 	switch evt.Type {
 	case "instance.stopped":
 		if deliberate {
-			slog.Info("autorestart: instance stopped deliberately", "id", managedID)
+			slog.Info(s.logPrefix("instance stopped deliberately"), "id", managedID)
 			return
 		}
 		// Instance exited unexpectedly — check if we should restart.
@@ -272,8 +302,8 @@ func (s *Strategy) handleCrash(ctx context.Context, crashedID string) {
 	}
 	s.mu.Unlock()
 
-	if count > maxRestarts {
-		slog.Error("autorestart: max restarts exceeded, giving up",
+	if s.hasRestartLimit() && count > maxRestarts {
+		slog.Error(s.logPrefix("max restarts exceeded, giving up"),
 			"id", crashedID,
 			"restartCount", count-1,
 			"maxRestarts", maxRestarts,
@@ -290,12 +320,15 @@ func (s *Strategy) handleCrash(ctx context.Context, crashedID string) {
 		return
 	}
 
-	slog.Warn("autorestart: instance crashed, scheduling restart",
+	args := []any{
 		"id", crashedID,
 		"attempt", count,
-		"maxRestarts", maxRestarts,
 		"backoff", backoff,
-	)
+	}
+	if s.hasRestartLimit() {
+		args = append(args, "maxRestarts", maxRestarts)
+	}
+	slog.Warn(s.logPrefix("instance crashed, scheduling restart"), args...)
 
 	// Emit restarting event.
 	if s.orch != nil {
@@ -333,13 +366,13 @@ func (s *Strategy) restartInstance() {
 	// profile slot and allocated port before we attempt a new launch.
 	if oldID != "" {
 		if err := s.orch.Stop(oldID); err != nil {
-			slog.Debug("autorestart: stop old instance (may already be gone)", "id", oldID, "err", err)
+			slog.Debug(s.logPrefix("stop old instance (may already be gone)"), "id", oldID, "err", err)
 		}
 	}
 
 	inst, err := s.orch.Launch(s.config.ProfileName, "", s.config.Headless, nil)
 	if err != nil {
-		slog.Error("autorestart: restart failed",
+		slog.Error(s.logPrefix("restart failed"),
 			"oldId", oldID,
 			"err", err,
 		)
@@ -356,7 +389,7 @@ func (s *Strategy) restartInstance() {
 	s.restarting = false
 	s.mu.Unlock()
 
-	slog.Info("autorestart: instance restarted",
+	slog.Info(s.logPrefix("instance restarted"),
 		"oldId", oldID,
 		"newId", inst.ID,
 		"attempt", count,
@@ -386,7 +419,7 @@ func (s *Strategy) stabilityLoop() {
 		case <-ticker.C:
 			s.mu.Lock()
 			if s.restartCount > 0 && !s.lastStart.IsZero() && time.Since(s.lastStart) > s.config.StableAfter {
-				slog.Info("autorestart: instance stable, resetting restart counter",
+				slog.Info(s.logPrefix("instance stable, resetting restart counter"),
 					"id", s.instanceID,
 					"stableFor", time.Since(s.lastStart).Round(time.Second),
 				)
@@ -429,4 +462,12 @@ func (s *Strategy) handleTabs(w http.ResponseWriter, r *http.Request) {
 
 func (s *Strategy) handleStatus(w http.ResponseWriter, r *http.Request) {
 	web.JSON(w, 200, s.State())
+}
+
+func (s *Strategy) hasRestartLimit() bool {
+	return s.config.MaxRestarts > 0
+}
+
+func (s *Strategy) logPrefix(message string) string {
+	return s.Name() + ": " + message
 }

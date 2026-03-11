@@ -111,6 +111,12 @@ func TestSetConfigValue_MultiInstanceFields(t *testing.T) {
 		{"multiInstance.strategy", "explicit", func(fc *FileConfig) bool { return fc.MultiInstance.Strategy == "explicit" }, false},
 		{"multiInstance.allocationPolicy", "round_robin", func(fc *FileConfig) bool { return fc.MultiInstance.AllocationPolicy == "round_robin" }, false},
 		{"multiInstance.instancePortStart", "9900", func(fc *FileConfig) bool { return *fc.MultiInstance.InstancePortStart == 9900 }, false},
+		{"multiInstance.restart.maxRestarts", "12", func(fc *FileConfig) bool {
+			return fc.MultiInstance.Restart.MaxRestarts != nil && *fc.MultiInstance.Restart.MaxRestarts == 12
+		}, false},
+		{"multiInstance.restart.initBackoffSec", "3", func(fc *FileConfig) bool {
+			return fc.MultiInstance.Restart.InitBackoffSec != nil && *fc.MultiInstance.Restart.InitBackoffSec == 3
+		}, false},
 		{"multiInstance.unknown", "value", nil, true},
 	}
 
@@ -422,6 +428,10 @@ func TestGetConfigValue_RoundTrip(t *testing.T) {
 		{"multiInstance.allocationPolicy", "round_robin", "round_robin"},
 		{"multiInstance.instancePortStart", "9900", "9900"},
 		{"multiInstance.instancePortEnd", "9950", "9950"},
+		{"multiInstance.restart.maxRestarts", "12", "12"},
+		{"multiInstance.restart.initBackoffSec", "3", "3"},
+		{"multiInstance.restart.maxBackoffSec", "45", "45"},
+		{"multiInstance.restart.stableAfterSec", "600", "600"},
 		{"security.attach.enabled", "true", "true"},
 		{"security.idpi.enabled", "true", "true"},
 		{"security.idpi.allowedDomains", "localhost,example.com", "localhost,example.com"},

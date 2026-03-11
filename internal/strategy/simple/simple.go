@@ -33,7 +33,8 @@ type Strategy struct {
 	orch *orchestrator.Orchestrator
 }
 
-func (s *Strategy) Name() string { return "simple" }
+func (s *Strategy) Name() string        { return "simple" }
+func (s *Strategy) HandlesLaunch() bool { return false }
 
 // SetOrchestrator injects the orchestrator after construction.
 func (s *Strategy) SetOrchestrator(o *orchestrator.Orchestrator) {

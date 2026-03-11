@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/orchestrator"
 	"github.com/pinchtab/pinchtab/internal/proxy"
 )
@@ -74,6 +75,42 @@ func TestStrategy_CustomConfig(t *testing.T) {
 	}
 	if s.config.Headless {
 		t.Error("expected Headless=false when explicitly set")
+	}
+}
+
+func TestStrategy_UnlimitedRestarts(t *testing.T) {
+	s := New(AutorestartConfig{MaxRestarts: -1})
+	s.restartCount = 100
+
+	state := s.State()
+	if state.MaxRestarts != -1 {
+		t.Fatalf("expected MaxRestarts=-1, got %d", state.MaxRestarts)
+	}
+	if state.Status == "crashed" {
+		t.Fatal("expected unlimited-restart strategy to avoid crashed state")
+	}
+}
+
+func TestStrategy_SetRuntimeConfig(t *testing.T) {
+	s := New(AutorestartConfig{})
+	s.SetRuntimeConfig(&config.RuntimeConfig{
+		RestartMaxRestarts: 11,
+		RestartInitBackoff: 4 * time.Second,
+		RestartMaxBackoff:  45 * time.Second,
+		RestartStableAfter: 8 * time.Minute,
+	})
+
+	if s.config.MaxRestarts != 11 {
+		t.Fatalf("expected MaxRestarts=11, got %d", s.config.MaxRestarts)
+	}
+	if s.config.InitBackoff != 4*time.Second {
+		t.Fatalf("expected InitBackoff=4s, got %s", s.config.InitBackoff)
+	}
+	if s.config.MaxBackoff != 45*time.Second {
+		t.Fatalf("expected MaxBackoff=45s, got %s", s.config.MaxBackoff)
+	}
+	if s.config.StableAfter != 8*time.Minute {
+		t.Fatalf("expected StableAfter=8m, got %s", s.config.StableAfter)
 	}
 }
 

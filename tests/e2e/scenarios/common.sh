@@ -50,6 +50,32 @@ get_time_ms() {
   fi
 }
 
+wait_for_strategy_running() {
+  local base_url="$1"
+  local path="$2"
+  local timeout_sec="${3:-60}"
+  local started_at
+  started_at=$(date +%s)
+
+  while true; do
+    local now
+    now=$(date +%s)
+    if [ $((now - started_at)) -ge "$timeout_sec" ]; then
+      echo -e "  ${RED}✗${NC} strategy at ${base_url}${path} did not reach running within ${timeout_sec}s"
+      return 1
+    fi
+
+    local status
+    status=$(curl -sf "${base_url}${path}" 2>/dev/null | jq -r '.status // empty' 2>/dev/null || true)
+    if [ "$status" = "running" ]; then
+      echo -e "  ${GREEN}✓${NC} strategy ready at ${base_url}${path}"
+      return 0
+    fi
+
+    sleep 1
+  done
+}
+
 # Start a test
 start_test() {
   CURRENT_TEST="$1"

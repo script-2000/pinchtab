@@ -6,6 +6,7 @@ import (
 	"github.com/pinchtab/pinchtab/internal/strategy"
 
 	// Register strategies via init()
+	_ "github.com/pinchtab/pinchtab/internal/strategy/alwayson"
 	_ "github.com/pinchtab/pinchtab/internal/strategy/autorestart"
 	_ "github.com/pinchtab/pinchtab/internal/strategy/explicit"
 	_ "github.com/pinchtab/pinchtab/internal/strategy/simple"
@@ -41,6 +42,16 @@ func TestRegistry_SimpleAutorestartRegistered(t *testing.T) {
 	}
 }
 
+func TestRegistry_AlwaysOnRegistered(t *testing.T) {
+	s, err := strategy.New("always-on")
+	if err != nil {
+		t.Fatalf("always-on strategy not registered: %v", err)
+	}
+	if s.Name() != "always-on" {
+		t.Errorf("expected name 'always-on', got %q", s.Name())
+	}
+}
+
 func TestRegistry_UnknownStrategy(t *testing.T) {
 	_, err := strategy.New("nonexistent")
 	if err == nil {
@@ -63,16 +74,42 @@ func TestRegistry_Names(t *testing.T) {
 	if !found["simple-autorestart"] {
 		t.Error("simple-autorestart not in names")
 	}
+	if !found["always-on"] {
+		t.Error("always-on not in names")
+	}
 }
 
 func TestOrchestratorAware_AllStrategies(t *testing.T) {
-	for _, name := range []string{"explicit", "simple", "simple-autorestart"} {
+	for _, name := range []string{"explicit", "simple", "simple-autorestart", "always-on"} {
 		s, err := strategy.New(name)
 		if err != nil {
 			t.Fatalf("strategy %q not registered: %v", name, err)
 		}
 		if _, ok := s.(strategy.OrchestratorAware); !ok {
 			t.Errorf("strategy %q does not implement OrchestratorAware", name)
+		}
+	}
+}
+
+func TestLaunchAware_Strategies(t *testing.T) {
+	tests := map[string]bool{
+		"simple":             false,
+		"explicit":           false,
+		"simple-autorestart": true,
+		"always-on":          true,
+	}
+
+	for name, want := range tests {
+		s, err := strategy.New(name)
+		if err != nil {
+			t.Fatalf("strategy %q not registered: %v", name, err)
+		}
+		launchAware, ok := s.(strategy.LaunchAware)
+		if !ok {
+			t.Fatalf("strategy %q does not implement LaunchAware", name)
+		}
+		if got := launchAware.HandlesLaunch(); got != want {
+			t.Errorf("strategy %q HandlesLaunch=%v, want %v", name, got, want)
 		}
 	}
 }

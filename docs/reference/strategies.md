@@ -18,11 +18,10 @@ Valid strategies in the current implementation:
 
 - `simple`
 - `explicit`
+- `always-on`
 - `simple-autorestart`
 
 ### `simple`
-
-`simple` is the default.
 
 Behavior:
 
@@ -52,6 +51,23 @@ Best fit:
 - agents that should name instances deliberately
 - deployments where hidden auto-launch would be surprising
 
+### `always-on`
+
+`always-on` behaves like a managed single-instance service that should stay up for the full lifetime of the PinchTab process.
+
+Behavior:
+
+- launches one managed instance when the strategy starts
+- exposes the same shorthand routes as `simple`
+- watches that managed instance and keeps restarting it after unexpected exits until the configured restart limit is reached
+- exposes `GET /always-on/status` for current managed-instance state
+
+Best fit:
+
+- daemon-style local services
+- agent hosts that expect one default browser to always be present
+- setups where startup availability matters, but you still want a bounded failure policy
+
 ### `simple-autorestart`
 
 `simple-autorestart` behaves like a managed single-instance service with recovery.
@@ -60,7 +76,7 @@ Behavior:
 
 - launches one managed instance when the strategy starts
 - exposes the same shorthand routes as `simple`
-- watches that managed instance and tries to restart it after unexpected exits
+- watches that managed instance and tries to restart it after unexpected exits under the configured restart policy
 - exposes `GET /autorestart/status` for restart state
 
 Best fit:
@@ -122,6 +138,25 @@ Best fit:
 
 ## Recommended Defaults
 
+### Always-On Service
+
+```json
+{
+  "multiInstance": {
+    "strategy": "always-on",
+    "allocationPolicy": "fcfs",
+    "restart": {
+      "maxRestarts": 20,
+      "initBackoffSec": 2,
+      "maxBackoffSec": 60,
+      "stableAfterSec": 300
+    }
+  }
+}
+```
+
+Use this when the default managed browser should be started immediately and kept available with a bounded restart policy.
+
 ### Simple Local Service
 
 ```json
@@ -154,7 +189,13 @@ Use this when your client is instance-aware and you want to control lifecycle di
 {
   "multiInstance": {
     "strategy": "simple-autorestart",
-    "allocationPolicy": "fcfs"
+    "allocationPolicy": "fcfs",
+    "restart": {
+      "maxRestarts": 3,
+      "initBackoffSec": 2,
+      "maxBackoffSec": 60,
+      "stableAfterSec": 300
+    }
   }
 }
 ```
@@ -164,7 +205,8 @@ Use this when one managed browser should stay available and recover after crashe
 ## Decision Rule
 
 ```text
-simple              = easiest default, auto-launches on shorthand traffic
+always-on           = default, launched at startup, restarted under restart policy
+simple              = on-demand shorthand auto-launch
 explicit            = most control, no shorthand auto-launch
 simple-autorestart  = one managed browser with crash recovery
 
@@ -172,4 +214,3 @@ fcfs                = deterministic
 round_robin         = balanced rotation
 random              = loose distribution
 ```
-

@@ -60,8 +60,12 @@ type RuntimeConfig struct {
 	WaitNavDelay    time.Duration
 
 	// Orchestrator settings (dashboard mode only)
-	Strategy         string // "simple" (default), "explicit", or "simple-autorestart"
-	AllocationPolicy string // "fcfs" (default), "round_robin", "random"
+	Strategy           string        // "always-on" (default), "simple", "explicit", or "simple-autorestart"
+	AllocationPolicy   string        // "fcfs" (default), "round_robin", "random"
+	RestartMaxRestarts int           // Max restart attempts for restart-managed strategies (-1 = unlimited, 0 = strategy default)
+	RestartInitBackoff time.Duration // Initial restart backoff (0 = strategy default)
+	RestartMaxBackoff  time.Duration // Maximum restart backoff cap (0 = strategy default)
+	RestartStableAfter time.Duration // Stable runtime window that resets the restart counter (0 = strategy default)
 
 	// Attach settings
 	AttachEnabled      bool
@@ -225,10 +229,19 @@ var defaultLocalAllowedDomains = []string{"127.0.0.1", "localhost", "::1"}
 
 // MultiInstanceConfig holds multi-instance orchestration settings.
 type MultiInstanceConfig struct {
-	Strategy          string `json:"strategy,omitempty"`
-	AllocationPolicy  string `json:"allocationPolicy,omitempty"`
-	InstancePortStart *int   `json:"instancePortStart,omitempty"`
-	InstancePortEnd   *int   `json:"instancePortEnd,omitempty"`
+	Strategy          string                     `json:"strategy,omitempty"`
+	AllocationPolicy  string                     `json:"allocationPolicy,omitempty"`
+	InstancePortStart *int                       `json:"instancePortStart,omitempty"`
+	InstancePortEnd   *int                       `json:"instancePortEnd,omitempty"`
+	Restart           MultiInstanceRestartConfig `json:"restart,omitempty"`
+}
+
+// MultiInstanceRestartConfig controls restart-managed strategy recovery behavior.
+type MultiInstanceRestartConfig struct {
+	MaxRestarts    *int `json:"maxRestarts,omitempty"`
+	InitBackoffSec *int `json:"initBackoffSec,omitempty"`
+	MaxBackoffSec  *int `json:"maxBackoffSec,omitempty"`
+	StableAfterSec *int `json:"stableAfterSec,omitempty"`
 }
 
 // AttachConfig holds policy for attaching to externally managed Chrome instances.
@@ -529,8 +542,12 @@ func Load() *RuntimeConfig {
 		WaitNavDelay:    1 * time.Second,
 
 		// Orchestrator defaults
-		Strategy:         "simple",
-		AllocationPolicy: "fcfs",
+		Strategy:           "always-on",
+		AllocationPolicy:   "fcfs",
+		RestartMaxRestarts: 20,
+		RestartInitBackoff: 2 * time.Second,
+		RestartMaxBackoff:  60 * time.Second,
+		RestartStableAfter: 5 * time.Minute,
 
 		// Attach defaults
 		AttachEnabled:      false,
@@ -712,6 +729,18 @@ func applyFileConfig(cfg *RuntimeConfig, fc *FileConfig) {
 	if fc.MultiInstance.InstancePortEnd != nil {
 		cfg.InstancePortEnd = *fc.MultiInstance.InstancePortEnd
 	}
+	if fc.MultiInstance.Restart.MaxRestarts != nil {
+		cfg.RestartMaxRestarts = *fc.MultiInstance.Restart.MaxRestarts
+	}
+	if fc.MultiInstance.Restart.InitBackoffSec != nil {
+		cfg.RestartInitBackoff = time.Duration(*fc.MultiInstance.Restart.InitBackoffSec) * time.Second
+	}
+	if fc.MultiInstance.Restart.MaxBackoffSec != nil {
+		cfg.RestartMaxBackoff = time.Duration(*fc.MultiInstance.Restart.MaxBackoffSec) * time.Second
+	}
+	if fc.MultiInstance.Restart.StableAfterSec != nil {
+		cfg.RestartStableAfter = time.Duration(*fc.MultiInstance.Restart.StableAfterSec) * time.Second
+	}
 
 	// Attach
 	if fc.Security.Attach.Enabled != nil {
@@ -780,6 +809,10 @@ func ApplyFileConfigToRuntime(cfg *RuntimeConfig, fc *FileConfig) {
 func DefaultFileConfig() FileConfig {
 	start := 9868
 	end := 9968
+	restartMaxRestarts := 20
+	restartInitBackoffSec := 2
+	restartMaxBackoffSec := 60
+	restartStableAfterSec := 300
 	maxTabs := 20
 	allowEvaluate := false
 	allowMacro := false
@@ -827,10 +860,16 @@ func DefaultFileConfig() FileConfig {
 			DefaultProfile: "default",
 		},
 		MultiInstance: MultiInstanceConfig{
-			Strategy:          "simple",
+			Strategy:          "always-on",
 			AllocationPolicy:  "fcfs",
 			InstancePortStart: &start,
 			InstancePortEnd:   &end,
+			Restart: MultiInstanceRestartConfig{
+				MaxRestarts:    &restartMaxRestarts,
+				InitBackoffSec: &restartInitBackoffSec,
+				MaxBackoffSec:  &restartMaxBackoffSec,
+				StableAfterSec: &restartStableAfterSec,
+			},
 		},
 		Timeouts: TimeoutsConfig{
 			ActionSec:   30,
@@ -865,6 +904,10 @@ func FileConfigFromRuntime(cfg *RuntimeConfig) FileConfig {
 	attachEnabled := cfg.AttachEnabled
 	start := cfg.InstancePortStart
 	end := cfg.InstancePortEnd
+	restartMaxRestarts := cfg.RestartMaxRestarts
+	restartInitBackoffSec := int(cfg.RestartInitBackoff / time.Second)
+	restartMaxBackoffSec := int(cfg.RestartMaxBackoff / time.Second)
+	restartStableAfterSec := int(cfg.RestartStableAfter / time.Second)
 
 	mode := "headless"
 	if !cfg.Headless {
@@ -922,6 +965,12 @@ func FileConfigFromRuntime(cfg *RuntimeConfig) FileConfig {
 			AllocationPolicy:  cfg.AllocationPolicy,
 			InstancePortStart: &start,
 			InstancePortEnd:   &end,
+			Restart: MultiInstanceRestartConfig{
+				MaxRestarts:    &restartMaxRestarts,
+				InitBackoffSec: &restartInitBackoffSec,
+				MaxBackoffSec:  &restartMaxBackoffSec,
+				StableAfterSec: &restartStableAfterSec,
+			},
 		},
 		Timeouts: TimeoutsConfig{
 			ActionSec:   int(cfg.ActionTimeout / time.Second),
@@ -1086,6 +1135,10 @@ func handleConfigShow(cfg *RuntimeConfig) {
 	fmt.Println("Multi-Instance:")
 	fmt.Printf("  Strategy:       %s\n", cfg.Strategy)
 	fmt.Printf("  Allocation:     %s\n", cfg.AllocationPolicy)
+	fmt.Printf("  Max Restarts:   %d\n", cfg.RestartMaxRestarts)
+	fmt.Printf("  Init Backoff:   %v\n", cfg.RestartInitBackoff)
+	fmt.Printf("  Max Backoff:    %v\n", cfg.RestartMaxBackoff)
+	fmt.Printf("  Stable After:   %v\n", cfg.RestartStableAfter)
 	fmt.Println()
 	fmt.Println("Attach:")
 	fmt.Printf("  Enabled:        %v\n", cfg.AttachEnabled)

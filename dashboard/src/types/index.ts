@@ -97,10 +97,18 @@ export interface BackendProfilesConfig {
 }
 
 export interface BackendMultiInstanceConfig {
-  strategy: "simple" | "explicit" | "simple-autorestart";
+  strategy: "simple" | "explicit" | "simple-autorestart" | "always-on";
   allocationPolicy: "fcfs" | "round_robin" | "random";
   instancePortStart: number;
   instancePortEnd: number;
+  restart: BackendMultiInstanceRestartConfig;
+}
+
+export interface BackendMultiInstanceRestartConfig {
+  maxRestarts: number;
+  initBackoffSec: number;
+  maxBackoffSec: number;
+  stableAfterSec: number;
 }
 
 export interface BackendAttachConfig {
@@ -194,10 +202,16 @@ export const defaultBackendConfig: BackendConfig = {
     defaultProfile: "default",
   },
   multiInstance: {
-    strategy: "simple",
+    strategy: "always-on",
     allocationPolicy: "fcfs",
     instancePortStart: 9868,
     instancePortEnd: 9968,
+    restart: {
+      maxRestarts: 20,
+      initBackoffSec: 2,
+      maxBackoffSec: 60,
+      stableAfterSec: 300,
+    },
   },
   timeouts: {
     actionSec: 30,

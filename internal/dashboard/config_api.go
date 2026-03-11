@@ -225,8 +225,21 @@ func (c *ConfigAPI) restartReasonsFor(next config.FileConfig) []string {
 	if c.boot.MultiInstance.Strategy != next.MultiInstance.Strategy {
 		reasons = append(reasons, "Routing strategy")
 	}
+	if !sameIntPtr(c.boot.MultiInstance.Restart.MaxRestarts, next.MultiInstance.Restart.MaxRestarts) ||
+		!sameIntPtr(c.boot.MultiInstance.Restart.InitBackoffSec, next.MultiInstance.Restart.InitBackoffSec) ||
+		!sameIntPtr(c.boot.MultiInstance.Restart.MaxBackoffSec, next.MultiInstance.Restart.MaxBackoffSec) ||
+		!sameIntPtr(c.boot.MultiInstance.Restart.StableAfterSec, next.MultiInstance.Restart.StableAfterSec) {
+		reasons = append(reasons, "Restart policy")
+	}
 
 	return reasons
+}
+
+func sameIntPtr(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func normalizeFileConfig(fc *config.FileConfig) (config.FileConfig, error) {

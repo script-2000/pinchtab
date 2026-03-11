@@ -716,7 +716,7 @@ export default function SettingsPage() {
               {activeSection === "orchestration" && (
                 <SectionCard
                   title="Orchestration"
-                  description="Port range and allocation policy can be applied immediately for future launches. Strategy changes require a dashboard restart because routes are registered at startup."
+                  description="Port range and allocation policy can be applied immediately for future launches. Strategy and restart-policy changes require a dashboard restart because strategy routes and lifecycle state are registered at startup."
                 >
                   <SettingRow
                     label="Strategy"
@@ -732,6 +732,7 @@ export default function SettingsPage() {
                       }
                       className={selectClass}
                     >
+                      <option value="always-on">Always on</option>
                       <option value="simple">Simple</option>
                       <option value="explicit">Explicit</option>
                       <option value="simple-autorestart">
@@ -785,6 +786,82 @@ export default function SettingsPage() {
                       onChange={(e) =>
                         updateBackendSection("multiInstance", {
                           instancePortEnd: Number(e.target.value),
+                        })
+                      }
+                      className={fieldClass}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    label="Max restarts"
+                    description="Maximum restart attempts for restart-managed strategies. Use -1 for unlimited."
+                  >
+                    <input
+                      type="number"
+                      min={-1}
+                      value={backendConfig.multiInstance.restart.maxRestarts}
+                      onChange={(e) =>
+                        updateBackendSection("multiInstance", {
+                          restart: {
+                            ...backendConfig.multiInstance.restart,
+                            maxRestarts: Number(e.target.value),
+                          },
+                        })
+                      }
+                      className={fieldClass}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    label="Initial backoff"
+                    description="Delay in seconds before the first restart attempt."
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      value={backendConfig.multiInstance.restart.initBackoffSec}
+                      onChange={(e) =>
+                        updateBackendSection("multiInstance", {
+                          restart: {
+                            ...backendConfig.multiInstance.restart,
+                            initBackoffSec: Number(e.target.value),
+                          },
+                        })
+                      }
+                      className={fieldClass}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    label="Max backoff"
+                    description="Upper bound in seconds for exponential restart backoff."
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      value={backendConfig.multiInstance.restart.maxBackoffSec}
+                      onChange={(e) =>
+                        updateBackendSection("multiInstance", {
+                          restart: {
+                            ...backendConfig.multiInstance.restart,
+                            maxBackoffSec: Number(e.target.value),
+                          },
+                        })
+                      }
+                      className={fieldClass}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    label="Stable after"
+                    description="Seconds the instance must stay healthy before the restart counter resets."
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      value={backendConfig.multiInstance.restart.stableAfterSec}
+                      onChange={(e) =>
+                        updateBackendSection("multiInstance", {
+                          restart: {
+                            ...backendConfig.multiInstance.restart,
+                            stableAfterSec: Number(e.target.value),
+                          },
                         })
                       }
                       className={fieldClass}
