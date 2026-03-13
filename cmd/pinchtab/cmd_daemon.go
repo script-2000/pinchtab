@@ -230,19 +230,24 @@ func ensureDaemonConfig(force bool) (string, *config.FileConfig, configBootstrap
 		return configPath, &defaults, status, nil
 	}
 
-	// If file exists and not forced, check if it needs recovery to secure baseline
-	_, changed, err := cli.RestoreSecurityDefaults()
-	if err != nil {
-		fileCfg, _, _ := config.LoadFileConfig()
-		return configPath, fileCfg, configVerified, err
-	}
-	status := configVerified
-	if changed {
-		status = configRecovered
+	// File exists — load it as-is, don't overwrite security settings.
+	// Security recovery is now handled by the wizard or `pinchtab security up`.
+	fileCfg, _, _ := config.LoadFileConfig()
+	if fileCfg == nil {
+		return configPath, nil, "", fmt.Errorf("failed to load existing config at %s", configPath)
 	}
 
-	fileCfg, _, _ := config.LoadFileConfig()
-	return configPath, fileCfg, status, nil
+	// Only generate a token if one is missing (security essential)
+	if strings.TrimSpace(fileCfg.Server.Token) == "" {
+		token, err := config.GenerateAuthToken()
+		if err == nil {
+			fileCfg.Server.Token = token
+			_ = config.SaveFileConfig(fileCfg, configPath)
+			return configPath, fileCfg, configRecovered, nil
+		}
+	}
+
+	return configPath, fileCfg, configVerified, nil
 }
 
 type configBootstrapStatus string

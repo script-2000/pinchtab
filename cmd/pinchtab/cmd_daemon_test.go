@@ -86,11 +86,13 @@ func TestEnsureOnboardConfigRecoversExistingSecuritySettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureDaemonConfig returned error: %v", err)
 	}
+	// Only token recovery happens now — security settings are preserved for wizard
 	if status != configRecovered {
 		t.Fatalf("status = %q, want %q", status, configRecovered)
 	}
-	if cfg.Server.Bind != "127.0.0.1" {
-		t.Fatalf("bind = %q, want 127.0.0.1", cfg.Server.Bind)
+	// Bind is preserved as-is (wizard handles security changes, not daemon config)
+	if cfg.Server.Bind != "0.0.0.0" {
+		t.Fatalf("bind = %q, want 0.0.0.0 (preserved)", cfg.Server.Bind)
 	}
 	if cfg.Server.Port != "9999" {
 		t.Fatalf("port = %q, want 9999", cfg.Server.Port)
@@ -98,9 +100,11 @@ func TestEnsureOnboardConfigRecoversExistingSecuritySettings(t *testing.T) {
 	if cfg.Browser.ChromeBinary != "/custom/chrome" {
 		t.Fatalf("chrome binary = %q, want /custom/chrome", cfg.Browser.ChromeBinary)
 	}
-	if boolPtrValue(cfg.Security.AllowEvaluate) {
-		t.Fatal("expected allowEvaluate to be reset to false")
+	// Security settings preserved — not overwritten
+	if !boolPtrValue(cfg.Security.AllowEvaluate) {
+		t.Fatal("expected allowEvaluate to be preserved as true")
 	}
+	// Token should be generated (was empty)
 	if strings.TrimSpace(cfg.Server.Token) == "" {
 		t.Fatal("expected recovery to generate a token")
 	}
