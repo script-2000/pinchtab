@@ -43,10 +43,9 @@ config_init
 CFG_FILE="$CFG"
 [ -f "$CFG_FILE" ] || CFG_FILE="$TMPDIR/.pinchtab/config.json"
 assert_file_exists "$CFG_FILE" "config file created"
-
-# Verify structure
 CFG="$CFG_FILE"
-assert_config_field ".server" "null" "" 2>/dev/null || true
+
+# Verify structure has expected sections
 if jq -e '.server' "$CFG" >/dev/null 2>&1; then
   echo -e "  ${GREEN}✓${NC} has server section"
   ((ASSERTIONS_PASSED++)) || true
