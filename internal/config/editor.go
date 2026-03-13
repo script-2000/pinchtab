@@ -627,9 +627,63 @@ func LoadFileConfig() (*FileConfig, string, error) {
 		if err := json.Unmarshal(data, &lc); err != nil {
 			return nil, configPath, fmt.Errorf("failed to parse legacy config: %w", err)
 		}
-		fc = convertLegacyConfig(&lc)
+		defaults := DefaultFileConfig()
+		fc = &defaults
+		legacy := convertLegacyConfig(&lc)
+		if legacy.Server.Port != "" {
+			fc.Server.Port = legacy.Server.Port
+		}
+		if legacy.Server.Token != "" {
+			fc.Server.Token = legacy.Server.Token
+		}
+		if legacy.Server.StateDir != "" {
+			fc.Server.StateDir = legacy.Server.StateDir
+		}
+		if legacy.InstanceDefaults.Mode != "" {
+			fc.InstanceDefaults.Mode = legacy.InstanceDefaults.Mode
+		}
+		if legacy.InstanceDefaults.NoRestore != nil {
+			fc.InstanceDefaults.NoRestore = legacy.InstanceDefaults.NoRestore
+		}
+		if legacy.InstanceDefaults.MaxTabs != nil {
+			fc.InstanceDefaults.MaxTabs = legacy.InstanceDefaults.MaxTabs
+		}
+		if legacy.Profiles.BaseDir != "" {
+			fc.Profiles.BaseDir = legacy.Profiles.BaseDir
+		}
+		if legacy.Profiles.DefaultProfile != "" {
+			fc.Profiles.DefaultProfile = legacy.Profiles.DefaultProfile
+		}
+		if legacy.Security.AllowEvaluate != nil {
+			fc.Security.AllowEvaluate = legacy.Security.AllowEvaluate
+		}
+		if legacy.Security.AllowMacro != nil {
+			fc.Security.AllowMacro = legacy.Security.AllowMacro
+		}
+		if legacy.Security.AllowScreencast != nil {
+			fc.Security.AllowScreencast = legacy.Security.AllowScreencast
+		}
+		if legacy.Security.AllowDownload != nil {
+			fc.Security.AllowDownload = legacy.Security.AllowDownload
+		}
+		if legacy.Security.AllowUpload != nil {
+			fc.Security.AllowUpload = legacy.Security.AllowUpload
+		}
+		if legacy.Timeouts.ActionSec != 0 {
+			fc.Timeouts.ActionSec = legacy.Timeouts.ActionSec
+		}
+		if legacy.Timeouts.NavigateSec != 0 {
+			fc.Timeouts.NavigateSec = legacy.Timeouts.NavigateSec
+		}
+		if legacy.MultiInstance.InstancePortStart != nil {
+			fc.MultiInstance.InstancePortStart = legacy.MultiInstance.InstancePortStart
+		}
+		if legacy.MultiInstance.InstancePortEnd != nil {
+			fc.MultiInstance.InstancePortEnd = legacy.MultiInstance.InstancePortEnd
+		}
 	} else {
-		fc = &FileConfig{}
+		defaults := DefaultFileConfig()
+		fc = &defaults
 		if err := json.Unmarshal(data, fc); err != nil {
 			return nil, configPath, fmt.Errorf("failed to parse config: %w", err)
 		}

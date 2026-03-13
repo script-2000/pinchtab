@@ -356,6 +356,44 @@ func TestLoadAndSaveFileConfig(t *testing.T) {
 	}
 }
 
+func TestLoadAndSaveFileConfigPreservesExplicitZeroValues(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	_ = os.Setenv("PINCHTAB_CONFIG", configPath)
+	defer func() { _ = os.Unsetenv("PINCHTAB_CONFIG") }()
+
+	fc := DefaultFileConfig()
+	fc.Server.Bind = ""
+	fc.Server.Token = ""
+	fc.Browser.ExtensionPaths = []string{}
+	fc.InstanceDefaults.UserAgent = ""
+	fc.Security.IDPI.StrictMode = false
+	fc.Security.IDPI.AllowedDomains = []string{}
+	fc.Security.IDPI.CustomPatterns = []string{}
+
+	if err := SaveFileConfig(&fc, configPath); err != nil {
+		t.Fatalf("SaveFileConfig() error = %v", err)
+	}
+
+	loaded, _, err := LoadFileConfig()
+	if err != nil {
+		t.Fatalf("LoadFileConfig() error = %v", err)
+	}
+
+	if loaded.Server.Bind != "" {
+		t.Errorf("loaded bind = %q, want empty string", loaded.Server.Bind)
+	}
+	if loaded.Security.IDPI.StrictMode {
+		t.Errorf("loaded strictMode = %v, want false", loaded.Security.IDPI.StrictMode)
+	}
+	if len(loaded.Security.IDPI.AllowedDomains) != 0 {
+		t.Errorf("loaded allowedDomains = %v, want empty list", loaded.Security.IDPI.AllowedDomains)
+	}
+	if len(loaded.Browser.ExtensionPaths) != 0 {
+		t.Errorf("loaded extensionPaths = %v, want empty list", loaded.Browser.ExtensionPaths)
+	}
+}
+
 func TestParseBool(t *testing.T) {
 	tests := []struct {
 		input   string

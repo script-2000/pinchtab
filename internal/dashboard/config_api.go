@@ -3,7 +3,6 @@ package dashboard
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -113,15 +112,9 @@ func (c *ConfigAPI) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *ConfigAPI) HandlePutConfig(w http.ResponseWriter, r *http.Request) {
-	var incoming config.FileConfig
-	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+	normalized := config.DefaultFileConfig()
+	if err := json.NewDecoder(r.Body).Decode(&normalized); err != nil {
 		web.ErrorCode(w, 400, "bad_config_json", "invalid config payload", false, nil)
-		return
-	}
-
-	normalized, err := normalizeFileConfig(&incoming)
-	if err != nil {
-		web.Error(w, 400, err)
 		return
 	}
 
@@ -220,12 +213,8 @@ func (c *ConfigAPI) currentConfig() (config.FileConfig, string, []string, error)
 	if err != nil {
 		return config.FileConfig{}, "", nil, err
 	}
-	normalized, err := normalizeFileConfig(fc)
-	if err != nil {
-		return config.FileConfig{}, "", nil, err
-	}
-	restartReasons := c.restartReasonsFor(normalized)
-	return normalized, path, restartReasons, nil
+	restartReasons := c.restartReasonsFor(*fc)
+	return *fc, path, restartReasons, nil
 }
 
 func (c *ConfigAPI) restartReasonsFor(next config.FileConfig) []string {
@@ -255,25 +244,4 @@ func sameIntPtr(a, b *int) bool {
 		return a == b
 	}
 	return *a == *b
-}
-
-func normalizeFileConfig(fc *config.FileConfig) (config.FileConfig, error) {
-	base := config.DefaultFileConfig()
-	if fc == nil {
-		return base, nil
-	}
-
-	data, err := json.Marshal(fc)
-	if err != nil {
-		return config.FileConfig{}, err
-	}
-	patch := strings.TrimSpace(string(data))
-	if patch == "" || patch == "null" || patch == "{}" {
-		return base, nil
-	}
-
-	if err := config.PatchConfigJSON(&base, patch); err != nil {
-		return config.FileConfig{}, err
-	}
-	return base, nil
 }

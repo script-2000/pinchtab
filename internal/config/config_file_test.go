@@ -195,6 +195,49 @@ func TestDefaultFileConfigJSON(t *testing.T) {
 	}
 }
 
+func TestFileConfigJSONPreservesExplicitZeroValues(t *testing.T) {
+	fc := DefaultFileConfig()
+	fc.Server.Bind = ""
+	fc.Browser.ExtensionPaths = []string{}
+	fc.InstanceDefaults.UserAgent = ""
+	fc.Security.IDPI.StrictMode = false
+	fc.Security.IDPI.AllowedDomains = []string{}
+	fc.Security.IDPI.CustomPatterns = []string{}
+
+	data, err := json.Marshal(fc)
+	if err != nil {
+		t.Fatalf("json.Marshal(FileConfig) error = %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal(FileConfig JSON) error = %v", err)
+	}
+
+	server := raw["server"].(map[string]any)
+	if bind, ok := server["bind"]; !ok || bind != "" {
+		t.Fatalf("server.bind = %#v, want explicit empty string", bind)
+	}
+
+	browser := raw["browser"].(map[string]any)
+	if ext, ok := browser["extensionPaths"]; !ok {
+		t.Fatal("browser.extensionPaths missing from JSON")
+	} else if items, ok := ext.([]any); !ok || len(items) != 0 {
+		t.Fatalf("browser.extensionPaths = %#v, want explicit empty list", ext)
+	}
+
+	security := raw["security"].(map[string]any)
+	idpi := security["idpi"].(map[string]any)
+	if strictMode, ok := idpi["strictMode"]; !ok || strictMode != false {
+		t.Fatalf("security.idpi.strictMode = %#v, want explicit false", strictMode)
+	}
+	if allowedDomains, ok := idpi["allowedDomains"]; !ok {
+		t.Fatal("security.idpi.allowedDomains missing from JSON")
+	} else if items, ok := allowedDomains.([]any); !ok || len(items) != 0 {
+		t.Fatalf("security.idpi.allowedDomains = %#v, want explicit empty list", allowedDomains)
+	}
+}
+
 func boolPtr(b bool) *bool {
 	return &b
 }
