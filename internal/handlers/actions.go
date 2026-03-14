@@ -91,19 +91,28 @@ func (h *Handlers) HandleAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve tab
-	ctx, resolvedTabID, err := h.Bridge.TabContext(req.TabID)
-	if err != nil {
-		web.Error(w, 404, err)
-		return
-	}
-	if req.TabID == "" {
-		req.TabID = resolvedTabID
-	}
-	owner := resolveOwner(r, req.Owner)
-	if err := h.enforceTabLease(resolvedTabID, owner); err != nil {
-		web.ErrorCode(w, 423, "tab_locked", err.Error(), false, nil)
-		return
+	// Resolve tab — skip for lite actions (lite engine manages its own tabs)
+	useLiteAction := h.shouldUseLiteAction(req.Kind)
+	var resolvedTabID string
+	var ctx context.Context
+	if useLiteAction {
+		ctx = r.Context()
+		resolvedTabID = req.TabID
+	} else {
+		var err error
+		ctx, resolvedTabID, err = h.Bridge.TabContext(req.TabID)
+		if err != nil {
+			web.Error(w, 404, err)
+			return
+		}
+		if req.TabID == "" {
+			req.TabID = resolvedTabID
+		}
+		owner := resolveOwner(r, req.Owner)
+		if err := h.enforceTabLease(resolvedTabID, owner); err != nil {
+			web.ErrorCode(w, 423, "tab_locked", err.Error(), false, nil)
+			return
+		}
 	}
 
 	// Allow custom timeout via query param (1-60 seconds)
@@ -121,8 +130,6 @@ func (h *Handlers) HandleAction(w http.ResponseWriter, r *http.Request) {
 	tCtx, tCancel := context.WithTimeout(ctx, actionTimeout)
 	defer tCancel()
 	go web.CancelOnClientDone(r.Context(), tCancel)
-
-	useLiteAction := h.shouldUseLiteAction(req.Kind)
 
 	// Resolve ref → nodeID
 	refMissing := false
@@ -330,23 +337,33 @@ func (h *Handlers) HandleTabActions(w http.ResponseWriter, r *http.Request) {
 // handleActionsBatch processes a batch of actions (used by both single and batch endpoints)
 func (h *Handlers) handleActionsBatch(w http.ResponseWriter, r *http.Request, req actionsRequest) {
 
-	ctx, resolvedTabID, err := h.Bridge.TabContext(req.TabID)
-	if err != nil {
-		web.Error(w, 404, err)
-		return
-	}
+	// Check if the first action is lite-routable to decide tab resolution strategy
+	allLite := h.Router != nil && h.Router.Mode() == engine.ModeLite
+	var ctx context.Context
+	var resolvedTabID string
 	owner := resolveOwner(r, req.Owner)
-	if err := h.enforceTabLease(resolvedTabID, owner); err != nil {
-		web.ErrorCode(w, 423, "tab_locked", err.Error(), false, nil)
-		return
+	if allLite {
+		ctx = r.Context()
+		resolvedTabID = req.TabID
+	} else {
+		var err error
+		ctx, resolvedTabID, err = h.Bridge.TabContext(req.TabID)
+		if err != nil {
+			web.Error(w, 404, err)
+			return
+		}
+		if err := h.enforceTabLease(resolvedTabID, owner); err != nil {
+			web.ErrorCode(w, 423, "tab_locked", err.Error(), false, nil)
+			return
+		}
 	}
 
 	results := make([]actionResult, 0, len(req.Actions))
-
 	for i, action := range req.Actions {
 		if action.TabID == "" {
 			action.TabID = resolvedTabID
-		} else if action.TabID != resolvedTabID {
+		} else if !allLite && action.TabID != resolvedTabID {
+			var err error
 			ctx, resolvedTabID, err = h.Bridge.TabContext(action.TabID)
 			if err != nil {
 				results = append(results, actionResult{
@@ -516,14 +533,23 @@ func (h *Handlers) HandleMacro(w http.ResponseWriter, r *http.Request) {
 		stepTimeout = time.Duration(req.StepTimeout * float64(time.Second))
 	}
 
-	ctx, resolvedTabID, err := h.Bridge.TabContext(req.TabID)
-	if err != nil {
-		web.Error(w, 404, err)
-		return
-	}
-	if err := h.enforceTabLease(resolvedTabID, owner); err != nil {
-		web.ErrorCode(w, 423, "tab_locked", err.Error(), false, nil)
-		return
+	allLiteMacro := h.Router != nil && h.Router.Mode() == engine.ModeLite
+	var ctx context.Context
+	var resolvedTabID string
+	if allLiteMacro {
+		ctx = r.Context()
+		resolvedTabID = req.TabID
+	} else {
+		var err error
+		ctx, resolvedTabID, err = h.Bridge.TabContext(req.TabID)
+		if err != nil {
+			web.Error(w, 404, err)
+			return
+		}
+		if err := h.enforceTabLease(resolvedTabID, owner); err != nil {
+			web.ErrorCode(w, 423, "tab_locked", err.Error(), false, nil)
+			return
+		}
 	}
 
 	results := make([]actionResult, 0, len(req.Steps))
