@@ -213,6 +213,31 @@ export async function fetchTabPdf(tabId: string): Promise<Blob> {
   return requestBlob(`/tabs/${encodeURIComponent(tabId)}/pdf?raw=true`);
 }
 
+export async function closeTab(tabId: string): Promise<void> {
+  await request(`/tabs/${encodeURIComponent(tabId)}`, { method: "DELETE" });
+}
+
+export async function navigateTab(
+  tabId: string,
+  url: string,
+): Promise<unknown> {
+  return request("/navigate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tabId, url }),
+  });
+}
+
+export async function sendAction(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  return request("/action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function subscribeToInstanceLogs(
   id: string,
   handlers: { onLogs?: (logs: string) => void },
