@@ -7,32 +7,37 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/pinchtab/pinchtab/internal/solver"
 )
 
-// CloudflareResult holds the outcome of a Cloudflare solve attempt.
-type CloudflareResult struct {
-	Solved        bool   `json:"solved"`
-	ChallengeType string `json:"challengeType,omitempty"`
-	Attempts      int    `json:"attempts"`
-	Title         string `json:"title"`
+func init() {
+	solver.MustRegister("cloudflare", &CloudflareSolver{})
 }
 
-type cfBoundingBox struct {
-	X      float64
-	Y      float64
-	Width  float64
-	Height float64
+// CloudflareSolver detects and solves Cloudflare Turnstile/Interstitial challenges.
+// It locates the Turnstile iframe, clicks the checkbox with human-like input,
+// and polls for resolution.
+type CloudflareSolver struct{}
+
+func (s *CloudflareSolver) Name() string { return "cloudflare" }
+
+// CanHandle checks the page title for known Cloudflare challenge indicators.
+func (s *CloudflareSolver) CanHandle(ctx context.Context) (bool, error) {
+	var title string
+	if err := chromedp.Run(ctx, chromedp.Title(&title)); err != nil {
+		return false, fmt.Errorf("get title: %w", err)
+	}
+	return isCFChallenge(title), nil
 }
 
-// SolveCloudflare detects and solves Cloudflare Turnstile/Interstitial challenges.
-// It finds the Turnstile iframe and clicks the checkbox using human-like mouse input.
-// The caller is responsible for setting context deadlines.
-func SolveCloudflare(ctx context.Context, maxAttempts int) (*CloudflareResult, error) {
+// Solve attempts to resolve the Cloudflare challenge on the current page.
+func (s *CloudflareSolver) Solve(ctx context.Context, opts solver.Options) (*solver.Result, error) {
+	maxAttempts := opts.MaxAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = 3
 	}
 
-	result := &CloudflareResult{}
+	result := &solver.Result{Solver: "cloudflare"}
 
 	var title string
 	if err := chromedp.Run(ctx, chromedp.Title(&title)); err != nil {
@@ -74,8 +79,14 @@ func SolveCloudflare(ctx context.Context, maxAttempts int) (*CloudflareResult, e
 			continue
 		}
 
-		clickX := box.X + float64(26+humanRand.Intn(3))
-		clickY := box.Y + float64(25+humanRand.Intn(3))
+		// Click the checkbox area using relative positioning within the
+		// Turnstile widget. The checkbox sits in the left portion (~9% from
+		// the left edge, ~40% from the top). Wider random offsets (+-4px)
+		// make the click pattern harder to fingerprint.
+		checkboxX := box.X + box.Width*0.09
+		checkboxY := box.Y + box.Height*0.40
+		clickX := checkboxX + (humanRand.Float64()-0.5)*8
+		clickY := checkboxY + (humanRand.Float64()-0.5)*8
 
 		if err := Click(ctx, clickX, clickY); err != nil {
 			return result, fmt.Errorf("click turnstile: %w", err)
@@ -97,6 +108,17 @@ func SolveCloudflare(ctx context.Context, maxAttempts int) (*CloudflareResult, e
 	}
 
 	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+type cfBoundingBox struct {
+	X      float64
+	Y      float64
+	Width  float64
+	Height float64
 }
 
 func isCFChallenge(title string) bool {
@@ -200,7 +222,7 @@ func waitForCFSpinner(ctx context.Context, timeout time.Duration) {
 	}
 }
 
-func waitForCFResolve(ctx context.Context, result *CloudflareResult, timeout time.Duration) (*CloudflareResult, error) {
+func waitForCFResolve(ctx context.Context, result *solver.Result, timeout time.Duration) (*solver.Result, error) {
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()

@@ -188,7 +188,8 @@ func (s *Strategy) RegisterRoutes(mux *http.ServeMux) {
 		"GET /cookies", "POST /cookies",
 		"GET /stealth/status", "POST /fingerprint/rotate",
 		"POST /find",
-		"POST /solve-cloudflare",
+		"GET /solvers",
+		"POST /solve", "POST /solve/{name}",
 	}
 	for _, route := range shorthandRoutes {
 		mux.HandleFunc(route, s.proxyToManaged)
