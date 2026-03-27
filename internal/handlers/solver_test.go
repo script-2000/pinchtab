@@ -56,6 +56,19 @@ func TestHandleSolve_InvalidBody(t *testing.T) {
 	}
 }
 
+func TestHandleSolve_EmptyBody(t *testing.T) {
+	h := New(&mockBridge{}, &config.RuntimeConfig{}, nil, nil, nil)
+
+	req := httptest.NewRequest("POST", "/solve", nil)
+	w := httptest.NewRecorder()
+	h.HandleSolve(w, req)
+
+	// Empty body should use defaults (auto-detect), not 400.
+	if w.Code == 400 {
+		t.Errorf("expected non-400 for empty body, got 400: %s", w.Body.String())
+	}
+}
+
 func TestHandleSolve_UnknownSolver(t *testing.T) {
 	h := New(&mockBridge{}, &config.RuntimeConfig{}, nil, nil, nil)
 

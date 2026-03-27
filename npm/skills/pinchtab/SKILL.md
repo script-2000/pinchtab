@@ -363,6 +363,7 @@ curl -X POST http://localhost:9868/action \
 
 curl http://localhost:9868/text
 
+## Instance-scoped solve (instance port, not server port)
 curl -X POST http://localhost:9868/solve \
   -H "Content-Type: application/json" \
   -d '{"maxAttempts": 3}'

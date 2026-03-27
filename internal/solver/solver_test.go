@@ -50,7 +50,9 @@ func TestMustRegisterPanicsOnDuplicate(t *testing.T) {
 func TestGet(t *testing.T) {
 	defer cleanup("test-get")
 
-	Register("test-get", &fakeSolver{name: "test-get"})
+	if err := Register("test-get", &fakeSolver{name: "test-get"}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	s, ok := Get("test-get")
 	if !ok || s == nil {
@@ -70,8 +72,12 @@ func TestNames(t *testing.T) {
 	defer cleanup("test-names-a")
 	defer cleanup("test-names-b")
 
-	Register("test-names-a", &fakeSolver{name: "a"})
-	Register("test-names-b", &fakeSolver{name: "b"})
+	if err := Register("test-names-a", &fakeSolver{name: "a"}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if err := Register("test-names-b", &fakeSolver{name: "b"}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	names := Names()
 	found := map[string]bool{}
@@ -90,11 +96,13 @@ func TestSolve_Named(t *testing.T) {
 	defer cleanup("test-solve")
 
 	expected := &Result{Solver: "test-solve", Solved: true, Attempts: 1}
-	Register("test-solve", &fakeSolver{
+	if err := Register("test-solve", &fakeSolver{
 		name:      "test-solve",
 		canHandle: true,
 		result:    expected,
-	})
+	}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	result, err := Solve(context.Background(), "test-solve", Options{MaxAttempts: 3})
 	if err != nil {
@@ -119,15 +127,19 @@ func TestSolve_AutoDetect(t *testing.T) {
 	defer cleanup("test-auto-no")
 	defer cleanup("test-auto-yes")
 
-	Register("test-auto-no", &fakeSolver{
+	if err := Register("test-auto-no", &fakeSolver{
 		name:      "test-auto-no",
 		canHandle: false,
-	})
-	Register("test-auto-yes", &fakeSolver{
+	}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if err := Register("test-auto-yes", &fakeSolver{
 		name:      "test-auto-yes",
 		canHandle: true,
 		result:    &Result{Solver: "test-auto-yes", Solved: true},
-	})
+	}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	result, err := Solve(context.Background(), "", Options{})
 	if err != nil {
@@ -141,10 +153,12 @@ func TestSolve_AutoDetect(t *testing.T) {
 func TestSolve_NoChallenge(t *testing.T) {
 	defer cleanup("test-noop")
 
-	Register("test-noop", &fakeSolver{
+	if err := Register("test-noop", &fakeSolver{
 		name:      "test-noop",
 		canHandle: false,
-	})
+	}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	result, err := Solve(context.Background(), "", Options{})
 	if err != nil {
@@ -156,7 +170,7 @@ func TestSolve_NoChallenge(t *testing.T) {
 }
 
 func TestUnregister(t *testing.T) {
-	Register("test-unreg", &fakeSolver{name: "test-unreg"})
+	_ = Register("test-unreg", &fakeSolver{name: "test-unreg"})
 	Unregister("test-unreg")
 
 	_, ok := Get("test-unreg")

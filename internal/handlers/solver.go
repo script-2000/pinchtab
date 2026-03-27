@@ -56,7 +56,7 @@ func (h *Handlers) HandleSolve(w http.ResponseWriter, r *http.Request) {
 		Timeout     float64 `json:"timeout"`
 	}
 
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodySize)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodySize)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		httpx.Error(w, 400, fmt.Errorf("decode: %w", err))
 		return
 	}
