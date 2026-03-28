@@ -28,12 +28,9 @@ func cleanProfileLocks(profileDir string) {
 		"SingletonSocket",
 	}
 	for _, name := range lockFiles {
-		path := profileDir + string(os.PathSeparator) + name
-		err := os.RemoveAll(path)
-		if err == nil {
+		path := profileDir + "/" + name
+		if err := os.Remove(path); err == nil {
 			slog.Warn("removed stale chrome lock file", "path", path)
-		} else if !os.IsNotExist(err) {
-			slog.Warn("failed to remove chrome lock file", "path", path, "error", err)
 		}
 	}
 }

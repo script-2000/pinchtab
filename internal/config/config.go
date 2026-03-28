@@ -29,6 +29,7 @@ type RuntimeConfig struct {
 	MaxTabs           int
 	ChromeBinary      string
 	ChromeExtraFlags  string
+	ProxyServer       string
 	UserAgent         string
 	NoAnimations      bool
 	StealthLevel      string
@@ -116,6 +117,7 @@ func Load() *RuntimeConfig {
 		MaxTabs:           envIntOr("BRIDGE_MAX_TABS", 20),
 		ChromeBinary:      envOr("CHROME_BIN", os.Getenv("CHROME_BINARY")),
 		ChromeExtraFlags:  os.Getenv("CHROME_FLAGS"),
+		ProxyServer:       os.Getenv("PINCHTAB_PROXY_URL"),
 		UserAgent:         os.Getenv("BRIDGE_USER_AGENT"),
 		NoAnimations:      os.Getenv("BRIDGE_NO_ANIMATIONS") == "true",
 		StealthLevel:      envOr("BRIDGE_STEALTH", "light"),

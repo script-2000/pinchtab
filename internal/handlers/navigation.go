@@ -150,6 +150,7 @@ func (h *Handlers) HandleNavigate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := bridge.NavigatePage(tCtx, req.URL); err != nil {
+			_ = h.Bridge.CloseTab(hashTabID)
 			code := 500
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "invalid URL") || strings.Contains(errMsg, "Cannot navigate to invalid URL") || strings.Contains(errMsg, "ERR_INVALID_URL") {
@@ -162,6 +163,12 @@ func (h *Handlers) HandleNavigate(w http.ResponseWriter, r *http.Request) {
 		var url string
 		_ = chromedp.Run(tCtx, chromedp.Location(&url))
 		title := bridge.WaitForTitle(tCtx, titleWait)
+
+		// Check if client disconnected or context timed out before returning 200
+		if r.Context().Err() != nil {
+			_ = h.Bridge.CloseTab(hashTabID)
+			return
+		}
 
 		web.JSON(w, 200, map[string]any{"tabId": hashTabID, "url": url, "title": title})
 		return
@@ -363,6 +370,11 @@ func (h *Handlers) HandleTab(w http.ResponseWriter, r *http.Request) {
 
 		var curURL, title string
 		_ = chromedp.Run(ctx, chromedp.Location(&curURL), chromedp.Title(&title))
+
+		if r.Context().Err() != nil {
+			_ = h.Bridge.CloseTab(hashTabID)
+			return
+		}
 
 		web.JSON(w, 200, map[string]any{"tabId": hashTabID, "url": curURL, "title": title})
 

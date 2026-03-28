@@ -9,11 +9,13 @@ Get PinchTab running in 5 minutes, from zero to browser automation.
 ### Option 1: One-Liner (Recommended)
 
 **macOS / Linux:**
+
 ```bash
 curl -fsSL https://pinchtab.com/install.sh | bash
 ```
 
 Then verify:
+
 ```bash
 pinchtab --version
 ```
@@ -28,6 +30,7 @@ pinchtab --version
 ```
 
 **Troubleshooting npm:**
+
 ```bash
 # If "command not found", add npm to PATH
 export PATH="$(npm config get prefix)/bin:$PATH"
@@ -63,11 +66,13 @@ go build -o pinchtab ./cmd/pinchtab
 ### Step 1: Start the Orchestrator
 
 **Terminal 1:**
+
 ```bash
 pinchtab
 ```
 
 **Expected output:**
+
 ```
 🦀 Pinchtab Dashboard port=9867
 dashboard ready url=http://localhost:9867/dashboard
@@ -78,6 +83,7 @@ The orchestrator is running on `http://127.0.0.1:9867`. Open the dashboard in yo
 ### Step 2: Create an Instance
 
 **Terminal 2:**
+
 ```bash
 # Create a headless instance (background Chrome)
 INST=$(pinchtab instance launch --mode headless | jq -r '.id')
@@ -182,17 +188,20 @@ curl -X POST http://localhost:9867/tabs/$TAB_ID/action \
 ### Key Concepts
 
 **Orchestrator** (port 9867):
+
 - Manages instances
 - Routes requests via `/instances/{id}/*`
 - No Chrome process itself
 
 **Instance** (ports 9868-9968):
+
 - Real Chrome browser process
 - Has one or more tabs
 - Isolated cookies, history, storage
 - Each has unique ID: `inst_XXXXXXXX`
 
 **Tab**:
+
 - Single webpage within instance
 - Has state (URL, DOM, focus, content)
 - Unique ID: `tab_XXXXXXXX`
@@ -312,7 +321,7 @@ print(f"Stopped instance: {inst_id}")
 ## Using with Node.js
 
 ```javascript
-const fetch = require('node-fetch');
+const fetch = require("node-fetch");
 
 const BASE = "http://localhost:9867";
 
@@ -322,22 +331,22 @@ async function main() {
     const launchResp = await fetch(`${BASE}/instances/launch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "headless" })
+      body: JSON.stringify({ mode: "headless" }),
     });
     const launch = await launchResp.json();
     const instId = launch.id;
     console.log(`Created instance: ${instId}`);
 
     // Wait for Chrome to initialize
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 2000));
 
     // 2. Create tab by navigating
     const navResp = await fetch(`${BASE}/instances/${instId}/tabs/open`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        url: "https://example.com"
-      })
+        url: "https://example.com",
+      }),
     });
     const navData = await navResp.json();
     const tabId = navData.id;
@@ -348,8 +357,8 @@ async function main() {
 
     // Print interactive elements
     snap.nodes
-      .filter(n => ["button", "link"].includes(n.role))
-      .forEach(n => console.log(`${n.ref}: ${n.role} - ${n.name}`));
+      .filter((n) => ["button", "link"].includes(n.role))
+      .forEach((n) => console.log(`${n.ref}: ${n.role} - ${n.name}`));
 
     // 4. Click element
     await fetch(`${BASE}/tabs/${tabId}/action`, {
@@ -357,8 +366,8 @@ async function main() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "click",
-        ref: "e5"
-      })
+        ref: "e5",
+      }),
     });
 
     // 5. Get text
@@ -368,10 +377,9 @@ async function main() {
 
     // 6. Stop instance
     await fetch(`${BASE}/instances/${instId}/stop`, {
-      method: "POST"
+      method: "POST",
     });
     console.log(`Stopped instance: ${instId}`);
-
   } catch (error) {
     console.error("Error:", error);
   }
@@ -395,6 +403,9 @@ BRIDGE_TOKEN=my-secret-token pinchtab
 
 # Bind to all interfaces (for remote access)
 BRIDGE_BIND=0.0.0.0 pinchtab
+
+# SSH tunnel remote server localhost to your PC
+ssh -L 9867:127.0.0.1:9867 knoa@187.124.239.250
 
 # Custom Chrome binary (used by all instances)
 CHROME_BIN=/usr/bin/google-chrome pinchtab
@@ -569,6 +580,7 @@ curl -X POST http://localhost:9867/tabs/$TAB_ID/action \
 **Problem:** Orchestrator not running
 
 **Solution:**
+
 ```bash
 # Terminal 1: Start orchestrator
 pinchtab
@@ -582,6 +594,7 @@ curl http://localhost:9867/health
 **Problem:** Chrome takes time to initialize (8-20 seconds)
 
 **Solution:**
+
 ```bash
 # Poll instance status
 INST=$(pinchtab instance launch | jq -r '.id')
@@ -601,6 +614,7 @@ curl -X POST http://localhost:9867/instances/$INST/tabs/open \
 **Problem:** Port 9867 (or instance port) is taken
 
 **Solution:**
+
 ```bash
 # Use different orchestrator port
 BRIDGE_PORT=9868 pinchtab
@@ -617,6 +631,7 @@ kill -9 <PID>
 **Problem:** Chrome/Chromium not installed
 
 **Solution:**
+
 ```bash
 # macOS
 brew install chromium
@@ -633,6 +648,7 @@ CHROME_BIN=/path/to/chrome pinchtab
 **Problem:** Instance ID is invalid or instance was stopped
 
 **Solution:**
+
 ```bash
 # List running instances
 curl http://localhost:9867/instances
@@ -649,6 +665,7 @@ curl http://localhost:9867/instances/$INST
 **Problem:** Page updated or different page loaded
 
 **Solution:**
+
 ```bash
 # Get fresh snapshot
 SNAP=$(curl http://localhost:9867/tabs/$TAB_ID/snapshot)
@@ -775,22 +792,22 @@ curl "http://localhost:9867/tabs/$TAB_ID/screenshot" # Higher tokens
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| Start orchestrator | `pinchtab` |
-| Health check | `curl http://localhost:9867/health` |
-| Create instance | `INST=$(pinchtab instance launch \| jq -r '.id')` |
-| Navigate | `curl -X POST http://localhost:9867/instances/$INST/tabs/open -d '{"url":"..."}' ` |
-| See structure | `curl http://localhost:9867/tabs/$TAB_ID/snapshot` |
-| Get text | `curl http://localhost:9867/tabs/$TAB_ID/text` |
-| Click element | `curl -X POST http://localhost:9867/tabs/$TAB_ID/action -d '{"kind":"click","ref":"e5"}'` |
-| Type text | `curl -X POST http://localhost:9867/tabs/$TAB_ID/action -d '{"kind":"type","ref":"e3","text":"hello"}'` |
-| Screenshot | `curl "http://localhost:9867/tabs/$TAB_ID/screenshot" -o page.png` |
-| PDF export | `curl http://localhost:9867/tabs/$TAB_ID/pdf -o out.pdf` |
-| List instances | `curl http://localhost:9867/instances` |
-| List tabs | `curl http://localhost:9867/instances/$INST/tabs` |
-| New tab | `curl -X POST http://localhost:9867/instances/$INST/tabs/open -d '{"url":"..."}'` |
-| Stop instance | `curl -X POST http://localhost:9867/instances/$INST/stop` |
+| Task               | Command                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| Start orchestrator | `pinchtab`                                                                                              |
+| Health check       | `curl http://localhost:9867/health`                                                                     |
+| Create instance    | `INST=$(pinchtab instance launch \| jq -r '.id')`                                                       |
+| Navigate           | `curl -X POST http://localhost:9867/instances/$INST/tabs/open -d '{"url":"..."}' `                      |
+| See structure      | `curl http://localhost:9867/tabs/$TAB_ID/snapshot`                                                      |
+| Get text           | `curl http://localhost:9867/tabs/$TAB_ID/text`                                                          |
+| Click element      | `curl -X POST http://localhost:9867/tabs/$TAB_ID/action -d '{"kind":"click","ref":"e5"}'`               |
+| Type text          | `curl -X POST http://localhost:9867/tabs/$TAB_ID/action -d '{"kind":"type","ref":"e3","text":"hello"}'` |
+| Screenshot         | `curl "http://localhost:9867/tabs/$TAB_ID/screenshot" -o page.png`                                      |
+| PDF export         | `curl http://localhost:9867/tabs/$TAB_ID/pdf -o out.pdf`                                                |
+| List instances     | `curl http://localhost:9867/instances`                                                                  |
+| List tabs          | `curl http://localhost:9867/instances/$INST/tabs`                                                       |
+| New tab            | `curl -X POST http://localhost:9867/instances/$INST/tabs/open -d '{"url":"..."}'`                       |
+| Stop instance      | `curl -X POST http://localhost:9867/instances/$INST/stop`                                               |
 
 ---
 
