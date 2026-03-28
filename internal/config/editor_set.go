@@ -51,6 +51,18 @@ func setServerField(s *ServerConfig, field, value string) error {
 			return fmt.Errorf("server.trustProxyHeaders must be true or false: %w", err)
 		}
 		s.TrustProxyHeaders = &b
+	case "cookieSecure":
+		v := strings.ToLower(strings.TrimSpace(value))
+		if v == "" || v == "auto" || v == "null" {
+			// Unset to enable auto-detect behavior (tri-state: nil = auto-detect).
+			s.CookieSecure = nil
+			return nil
+		}
+		b, err := parseBool(value)
+		if err != nil {
+			return fmt.Errorf("server.cookieSecure must be true or false (or empty/auto/null to unset): %w", err)
+		}
+		s.CookieSecure = &b
 	default:
 		return fmt.Errorf("unknown field server.%s", field)
 	}
