@@ -8,10 +8,10 @@ import (
 func TestFormatSnapshotCompact_Basic(t *testing.T) {
 	nodes := []A11yNode{
 		{Ref: "e0", Role: "button", Name: "Submit"},
-		{Ref: "e1", Role: "textbox", Name: "Email", Value: "test@example.com"},
+		{Ref: "e1", Role: "textbox", Name: "Email", Value: "test@pinchtab.com"},
 	}
 	got := FormatSnapshotCompact(nodes)
-	want := "e0:button \"Submit\"\ne1:textbox \"Email\" val=\"test@example.com\"\n"
+	want := "e0:button \"Submit\"\ne1:textbox \"Email\" val=\"test@pinchtab.com\"\n"
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -233,4 +233,32 @@ func searchString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestFrameIDs_Recursive(t *testing.T) {
+	tree := rawFrameTree{}
+	tree.Frame.ID = "root"
+	tree.ChildFrames = []rawFrameTree{
+		{Frame: struct {
+			ID string `json:"id"`
+		}{ID: "child-1"}},
+		{
+			Frame: struct {
+				ID string `json:"id"`
+			}{ID: "child-2"},
+			ChildFrames: []rawFrameTree{{Frame: struct {
+				ID string `json:"id"`
+			}{ID: "grandchild"}}},
+		},
+	}
+	got := frameIDs(tree)
+	want := []string{"root", "child-1", "child-2", "grandchild"}
+	if len(got) != len(want) {
+		t.Fatalf("len=%d want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("frameIDs[%d]=%q want %q (all=%v)", i, got[i], want[i], got)
+		}
+	}
 }

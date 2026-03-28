@@ -12,7 +12,7 @@ ERROR='\033[38;2;230;57;70m'        # red #e63946
 MUTED='\033[38;2;90;100;128m'       # text-muted #5a6480
 NC='\033[0m' # No Color
 
-TAGLINE="12MB binary. Zero config. Accessibility-first browser control."
+TAGLINE="Small binary. Zero config. Accessibility-first browser control."
 
 cleanup_tmpfiles() {
     local f
@@ -106,9 +106,66 @@ check_npm() {
     ui_success "npm $(npm -v) found"
 }
 
+check_chrome() {
+    local chrome_found=false
+    local chrome_path=""
+
+    # Check common Chrome/Chromium locations
+    local candidates=(
+        "google-chrome"
+        "google-chrome-stable"
+        "chromium"
+        "chromium-browser"
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        "/Applications/Chromium.app/Contents/MacOS/Chromium"
+        "/usr/bin/google-chrome"
+        "/usr/bin/google-chrome-stable"
+        "/usr/bin/chromium"
+        "/usr/bin/chromium-browser"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if command -v "$candidate" &> /dev/null || [[ -f "$candidate" ]]; then
+            chrome_found=true
+            chrome_path="$candidate"
+            break
+        fi
+    done
+
+    if [[ "$chrome_found" == true ]]; then
+        ui_success "Chrome/Chromium found: $chrome_path"
+    else
+        ui_error "Chrome or Chromium not found"
+        echo ""
+        echo "Pinchtab requires Chrome or Chromium to be installed."
+        echo ""
+        if [[ "$OS" == "macos" ]]; then
+            echo "Install Chrome or Chromium:"
+            echo "  • Chrome: https://www.google.com/chrome/"
+            echo "  • Chromium (via Homebrew): brew install chromium"
+        else
+            echo "Install Chrome or Chromium:"
+            echo ""
+            echo "  Debian/Ubuntu/Raspberry Pi:"
+            echo "    sudo apt update && sudo apt install -y chromium-browser"
+            echo ""
+            echo "  Fedora/RHEL:"
+            echo "    sudo dnf install -y chromium"
+            echo ""
+            echo "  Arch Linux:"
+            echo "    sudo pacman -S chromium"
+            echo ""
+            echo "  Or download Chrome: https://www.google.com/chrome/"
+        fi
+        echo ""
+        echo "After installing Chrome/Chromium, run this installer again."
+        exit 1
+    fi
+}
+
 install_pinchtab() {
     ui_section "Installing Pinchtab"
-    
+
     if npm install -g pinchtab > "$LOGFILE" 2>&1; then
         ui_success "Pinchtab installed successfully"
         return 0
@@ -116,7 +173,7 @@ install_pinchtab() {
         local exit_code=$?
         ui_error "npm install failed"
         echo ""
-        
+
         # Check for permission error
         if grep -q "EACCES\|permission denied" "$LOGFILE"; then
             echo "This is a permission error. Try one of these:"
@@ -176,14 +233,15 @@ show_next_steps() {
 main() {
     print_banner
     setup_logfile
-    
+
     detect_os
     check_node
     check_npm
+    check_chrome
     install_pinchtab
     verify_installation
     show_next_steps
-    
+
     ui_section "Installation complete!"
     echo -e "Run ${ACCENT}${BOLD}pinchtab${NC} to start 🦀"
     echo ""

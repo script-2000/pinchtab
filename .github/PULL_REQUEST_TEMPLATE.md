@@ -7,11 +7,11 @@
 ## Testing
 <!-- How did you test this? Include command examples if applicable -->
 
-- [ ] Unit/integration tests added or updated
+- [ ] Unit and/or Docker E2E tests added or updated
 - [ ] Manual testing completed (describe below)
 
 ## Checklist
-See [DEFINITION_OF_DONE.md](../DEFINITION_OF_DONE.md) for full checklist.
+See [DEFINITION_OF_DONE.md](./DEFINITION_OF_DONE.md) for the full checklist.
 
 **Automated (CI enforces):**
 - [ ] gofmt + golangci-lint passes

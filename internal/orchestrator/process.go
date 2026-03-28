@@ -90,6 +90,23 @@ func mergeEnvWithOverrides(base []string, overrides map[string]string) []string 
 	return out
 }
 
+func filterEnvWithPrefixes(env []string, prefixes ...string) []string {
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		skip := false
+		for _, p := range prefixes {
+			if strings.HasPrefix(e, p) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 type ringBuffer struct {
 	mu   sync.Mutex
 	data []byte

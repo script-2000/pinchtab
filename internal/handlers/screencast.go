@@ -13,12 +13,68 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
-	"github.com/pinchtab/pinchtab/internal/web"
+	"github.com/pinchtab/pinchtab/internal/httpx"
 )
+
+const screencastRepaintStartJS = `(function() {
+  const key = "__pinchtabScreencastRepaint";
+  const state = globalThis[key] || (globalThis[key] = { refs: 0 });
+  state.refs += 1;
+  if (state.refs > 1) {
+    return state.refs;
+  }
+
+  const el = document.createElement("div");
+  el.id = "__pinchtab_screencast_repaint";
+  el.setAttribute("aria-hidden", "true");
+  el.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;opacity:0.999;background:rgba(0,0,0,0.001);transform:translateZ(0);will-change:opacity;z-index:2147483647;";
+  (document.body || document.documentElement).appendChild(el);
+
+  state.element = el;
+  state.animation = el.animate(
+    [{ opacity: 0.999 }, { opacity: 1 }],
+    { duration: 1000, iterations: Infinity, direction: "alternate", easing: "linear" }
+  );
+  return state.refs;
+})()`
+
+const screencastRepaintStopJS = `(function() {
+  const key = "__pinchtabScreencastRepaint";
+  const state = globalThis[key];
+  if (!state) {
+    return 0;
+  }
+
+  state.refs = Math.max(0, (state.refs || 1) - 1);
+  if (state.refs > 0) {
+    return state.refs;
+  }
+
+  try {
+    if (state.animation) {
+      state.animation.cancel();
+    }
+  } catch (_) {}
+
+  try {
+    if (state.element) {
+      state.element.remove();
+    }
+  } catch (_) {}
+
+  delete globalThis[key];
+  return 0;
+})()`
 
 // HandleScreencast upgrades to WebSocket and streams screencast frames for a tab.
 // Query params: tabId (required), quality (1-100, default 40), maxWidth (default 800), fps (1-30, default 5)
 func (h *Handlers) HandleScreencast(w http.ResponseWriter, r *http.Request) {
+	if !h.Config.AllowScreencast {
+		httpx.ErrorCode(w, 403, "screencast_disabled", httpx.DisabledEndpointMessage("screencast", "security.allowScreencast"), false, map[string]any{
+			"setting": "security.allowScreencast",
+		})
+		return
+	}
 	tabID := r.URL.Query().Get("tabId")
 	if tabID == "" {
 		targets, err := h.Bridge.ListTargets()
@@ -27,9 +83,12 @@ func (h *Handlers) HandleScreencast(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx, _, err := h.Bridge.TabContext(tabID)
+	ctx, resolvedTabID, err := h.tabContext(r, tabID)
 	if err != nil {
 		http.Error(w, "tab not found", 404)
+		return
+	}
+	if _, ok := h.enforceCurrentTabDomainPolicy(w, r, ctx, resolvedTabID); !ok {
 		return
 	}
 
@@ -51,6 +110,11 @@ func (h *Handlers) HandleScreencast(w http.ResponseWriter, r *http.Request) {
 
 	if ctx == nil {
 		return
+	}
+
+	stopRepaintLoop := func() {}
+	if h.Config != nil && h.Config.Headless {
+		stopRepaintLoop = startScreencastRepaintLoop(ctx)
 	}
 
 	frameCh := make(chan []byte, 3)
@@ -100,12 +164,13 @@ func (h *Handlers) HandleScreencast(w http.ResponseWriter, r *http.Request) {
 		}),
 	)
 	if err != nil {
-		slog.Error("start screencast failed", "err", err, "tab", tabID)
+		slog.Error("start screencast failed", "err", err, "tab", resolvedTabID)
 		return
 	}
 
 	defer func() {
 		once.Do(func() { close(done) })
+		stopRepaintLoop()
 		_ = chromedp.Run(ctx,
 			chromedp.ActionFunc(func(c context.Context) error {
 				return page.StopScreencast().Do(c)
@@ -113,7 +178,7 @@ func (h *Handlers) HandleScreencast(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
-	slog.Info("screencast started", "tab", tabID, "quality", quality, "maxWidth", maxWidth)
+	slog.Info("screencast started", "tab", resolvedTabID, "quality", quality, "maxWidth", maxWidth)
 
 	go func() {
 		for {
@@ -141,8 +206,27 @@ func (h *Handlers) HandleScreencast(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func startScreencastRepaintLoop(ctx context.Context) func() {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(screencastRepaintStartJS, nil)); err != nil {
+		slog.Warn("enable screencast repaint loop failed", "err", err)
+		return func() {}
+	}
+
+	return func() {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(screencastRepaintStopJS, nil)); err != nil {
+			slog.Warn("disable screencast repaint loop failed", "err", err)
+		}
+	}
+}
+
 // HandleScreencastAll returns info for building a multi-tab screencast view.
 func (h *Handlers) HandleScreencastAll(w http.ResponseWriter, r *http.Request) {
+	if !h.Config.AllowScreencast {
+		httpx.ErrorCode(w, 403, "screencast_disabled", httpx.DisabledEndpointMessage("screencast", "security.allowScreencast"), false, map[string]any{
+			"setting": "security.allowScreencast",
+		})
+		return
+	}
 	type tabInfo struct {
 		ID    string `json:"id"`
 		URL   string `json:"url,omitempty"`
@@ -151,7 +235,7 @@ func (h *Handlers) HandleScreencastAll(w http.ResponseWriter, r *http.Request) {
 
 	targets, err := h.Bridge.ListTargets()
 	if err != nil {
-		web.JSON(w, 200, []tabInfo{})
+		httpx.JSON(w, 200, []tabInfo{})
 		return
 	}
 
@@ -164,7 +248,7 @@ func (h *Handlers) HandleScreencastAll(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	web.JSON(w, 200, tabs)
+	httpx.JSON(w, 200, tabs)
 }
 
 func queryParamInt(r *http.Request, key string, def int) int {

@@ -21,7 +21,7 @@ func TestReadChromeProfileIdentity(t *testing.T) {
 			"info_cache": {
 				"Default": {
 					"name": "Work Profile",
-					"user_name": "work@example.com",
+					"user_name": "work@pinchtab.com",
 					"gaia_name": "Work User",
 					"gaia_id": "12345",
 					"is_consented_primary_account": true
@@ -34,7 +34,7 @@ func TestReadChromeProfileIdentity(t *testing.T) {
 	}
 
 	name, email, accName, hasAcc = readChromeProfileIdentity(tmpDir)
-	if name != "Work Profile" || email != "work@example.com" || accName != "Work User" || !hasAcc {
+	if name != "Work Profile" || email != "work@pinchtab.com" || accName != "Work User" || !hasAcc {
 		t.Errorf("Local State parsing failed: got %q, %q, %q, %v", name, email, accName, hasAcc)
 	}
 
@@ -46,7 +46,7 @@ func TestReadChromeProfileIdentity(t *testing.T) {
 	prefsContent := `{
 		"account_info": [
 			{
-				"email": "pref@example.com",
+				"email": "pref@pinchtab.com",
 				"full_name": "Pref User",
 				"gaia": "67890"
 			}
@@ -57,7 +57,7 @@ func TestReadChromeProfileIdentity(t *testing.T) {
 	}
 
 	name, email, accName, hasAcc = readChromeProfileIdentity(tmpDir)
-	if name != "Work Profile" || email != "pref@example.com" || accName != "Pref User" || !hasAcc {
+	if name != "Work Profile" || email != "pref@pinchtab.com" || accName != "Pref User" || !hasAcc {
 		t.Errorf("Preferences parsing/override failed: got %q, %q, %q, %v", name, email, accName, hasAcc)
 	}
 }

@@ -1,401 +1,311 @@
 # Core Concepts
 
-PinchTab is an HTTP server that controls four key entities: **PinchTab itself**, **Instances**, **Profiles**, and **Tabs**.
+This document describes the concepts that are implemented today in PinchTab.
 
-**See also:**
-- [Instance API Reference](references/instance-api.md) — Complete instance endpoints
-- [Tabs API Reference](references/tabs-api.md) — Tab management endpoints
-- [Profile API Reference](references/profile-api.md) — Profile management endpoints
+## Server
 
----
+The **server** is the main PinchTab process.
 
-## PinchTab
-
-The **HTTP server controller** (orchestrator) that manages all instances, profiles, and tabs.
-
-- Listens on port `9867` (configurable, dashboard + API)
-- Routes requests to the appropriate instance
-- Manages instance lifecycle (launch, monitor, stop)
-- Provides unified HTTP API for all operations
-- No Chrome process itself — purely orchestrator
+Start it with:
 
 ```bash
-# Start PinchTab orchestrator (default: port 9867)
 pinchtab
-# Listening on http://localhost:9867
-
-# Or specify port
-BRIDGE_PORT=9870 pinchtab
-# Listening on http://localhost:9870
+# or explicitly
+pinchtab server
 ```
 
----
+What the server does:
 
-## Instance
+- exposes the main HTTP API and dashboard on port `9867` by default
+- manages profiles and instances
+- proxies tab-scoped requests to the correct managed instance
+- can expose shorthand routes such as `/navigate`, `/snapshot`, and `/action`
 
-A **running Chrome process** with an optional profile, auto-allocated to a unique port (9868-9968 by default).
+Important clarification:
 
-- One Chrome browser per instance
-- Optional profile (see [Profile](#profile) below)
-- Can host multiple tabs
-- Completely isolated from other instances
-- Identified by instance ID: `inst_XXXXXXXX` (hash-based, stable)
-- Auto-allocated to unique port in 9868-9968 range
-- Lazy Chrome initialization (starts on first request, not at creation)
+- the server is the public entry point
+- for managed instances, the server usually does **not** talk to Chrome directly
+- instead, it spawns or routes to a per-instance **bridge** process
 
-**Key constraint:** One instance = one Chrome process = zero or one profile.
+## Bridge
 
-### Creating Instances
+The **bridge** is the single-instance runtime.
 
-Instances are managed by the orchestrator via the API (not by running separate processes).
+Start it directly only when you want one standalone browser runtime:
 
 ```bash
-# CLI: Create instance (headless by default)
-pinchtab instance launch
+pinchtab bridge
+```
 
-# CLI: Create headed (visible) instance
-pinchtab instance launch --mode headed
+What the bridge does:
 
-# CLI: Create with specific port
-pinchtab instance launch --mode headed --port 9999
+- owns exactly one Chrome browser process
+- exposes browser and tab endpoints such as `/navigate`, `/snapshot`, `/action`, and `/tabs/{id}/...`
+- is the process the server launches for each managed instance
 
-# Curl: Create instance via API
-curl -X POST http://localhost:9867/instances/launch \
+In normal multi-instance usage, you usually interact with the server, not with bridge processes directly.
+
+## Profiles
+
+A **profile** is a Chrome user data directory.
+
+It stores persistent browser state such as:
+
+- cookies
+- local storage
+- cache
+- browsing history
+- extensions
+- saved account state
+
+Profile facts that match the current implementation:
+
+- profiles are persistent on disk
+- profiles can exist without any running instance
+- at most one active managed instance can use a given profile at a time
+- profile IDs use the format `prof_XXXXXXXX`
+- `GET /profiles` hides temporary auto-generated profiles unless you pass `?all=true`
+
+Create a profile with the API:
+
+```bash
+curl -X POST http://localhost:9867/profiles \
   -H "Content-Type: application/json" \
-  -d '{"mode": "headed", "port": "9999"}'
+  -d '{
+    "name": "work",
+    "description": "Main logged-in work profile"
+  }'
+# Response
+{
+  "status": "created",
+  "id": "prof_278be873",
+  "name": "work"
+}
+```
 
+## Instances
+
+An **instance** is a managed browser runtime.
+
+In practice, one instance means:
+
+- one bridge process
+- one Chrome process
+- zero or one profile
+- one dedicated port
+- many tabs
+
+Instance facts that match the current implementation:
+
+- instance IDs use the format `inst_XXXXXXXX`
+- ports are auto-allocated from `9868-9968` by default
+- instance status is tracked as `starting`, `running`, `stopping`, `stopped`, or `error`
+- one profile cannot be attached to multiple active managed instances at the same time
+
+### Persistent vs temporary instances
+
+There are two common ways to start an instance:
+
+1. with a named profile
+2. without a profile ID
+
+If you start an instance with a profile ID, the instance uses that persistent profile.
+
+If you start an instance without a profile ID, PinchTab creates an auto-generated profile named like `instance-...`.
+That temporary profile is deleted when the instance stops.
+
+So this is the correct mental model:
+
+- instances without an explicit profile are **ephemeral**
+- the implementation still creates a temporary profile directory behind the scenes
+- that temporary profile is cleanup state, not a reusable long-term profile
+
+### Starting an instance
+
+Preferred endpoint:
+
+```bash
+curl -X POST http://localhost:9867/instances/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "profileId": "prof_278be873",
+    "mode": "headed"
+  }'
+# CLI Alternative
+pinchtab instance start --profile prof_278be873 --mode headed
 # Response
 {
   "id": "inst_0a89a5bb",
   "profileId": "prof_278be873",
-  "profileName": "Instance-...",
+  "profileName": "work",
   "port": "9868",
   "headless": false,
   "status": "starting"
 }
 ```
 
-### Multiple Instances
+## Tabs
 
-You can run multiple instances simultaneously for isolation and scalability. The orchestrator manages them automatically:
+A **tab** is a single page inside an instance.
 
-```bash
-# Terminal 1: Start orchestrator
-pinchtab
+Tabs belong to an instance, and therefore inherit that instance's profile state.
 
-# Terminal 2: Create multiple instances
-for i in 1 2 3; do
-  pinchtab instance launch --mode headless
-done
+What a tab gives you:
 
-# List all instances
-curl http://localhost:9867/instances | jq .
+- its own URL and page state
+- a snapshot of the accessibility tree
+- action execution such as click, type, fill, hover, and press
+- text extraction, screenshots, PDF export, cookie access, and evaluation
 
-# Response: 3 independent instances on ports 9868, 9869, 9870
-[
-  {"id": "inst_0a89a5bb", "port": "9868", "status": "running"},
-  {"id": "inst_1b9a5dcc", "port": "9869", "status": "running"},
-  {"id": "inst_2c8a5eef", "port": "9870", "status": "running"}
-]
-```
-
-Each instance is completely independent — no shared state, no cookie leakage, no resource contention.
-
----
-
-## Profile
-
-A **browser profile** (Chrome user data directory) containing browser state. Optional per instance.
-
-- Holds browser state: cookies, local storage, cache, browsing history, extensions
-- Only one profile per instance
-- Multiple tabs can share the same profile (and its state)
-- Identified by profile ID: `prof_XXXXXXXX` (hash-based, stable)
-- Useful for: user accounts, login sessions, multi-tenant workflows
-- Persistent across instance restarts
-
-**Key constraint:** Instance without a profile = ephemeral, no persistent state across restarts.
-
-### Managing Profiles
+Open a tab in a specific instance:
 
 ```bash
-# CLI: List all profiles
-pinchtab profiles
+INST=inst_0a89a5bb
 
-# CLI: Create profile
-pinchtab profile create my-profile
-
-# Curl: List profiles (excludes temporary auto-generated profiles)
-curl http://localhost:9867/profiles | jq .
-
+curl -X POST http://localhost:9867/instances/$INST/tabs/open \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://pinchtab.com"}'
 # Response
-[
-  {
-    "id": "278be873",
-    "name": "my-profile",
-    "created": "2026-03-01T05:21:38.274Z",
-    "diskUsage": 5242880,
-    "source": "created"
-  }
-]
+{
+  "tabId": "CDP_TARGET_ID"
+}
 ```
 
-### Using Profiles with Instances
+Then use tab-scoped endpoints:
 
 ```bash
-# Create instance with specific profile
-curl -X POST http://localhost:9867/instances/start \
+TAB=CDP_TARGET_ID
+
+curl http://localhost:9867/tabs/$TAB/snapshot
+
+curl -X POST http://localhost:9867/tabs/$TAB/action \
   -H "Content-Type: application/json" \
-  -d '{"profileId": "278be873"}'
+  -d '{"kind":"click","ref":"e5"}'
 
-# Or via CLI
-pinchtab instance launch  # Uses temp auto-generated profile
+curl -X POST http://localhost:9867/tabs/$TAB/close
 ```
 
-### Profile Use Cases
+### Are tabs persistent?
 
-**Separate User Accounts:**
-```text
-Instance 1 (profile: alice)
-  ├── Tab 1: alice@example.com logged in
-  └── Tab 2: alice@example.com dashboard
+Usually, no.
 
-Instance 2 (profile: bob)
-  ├── Tab 1: bob@example.com logged in
-  └── Tab 2: bob@example.com dashboard
-```
+For managed instances started by the server:
 
-```bash
-# Create profiles for each user
-pinchtab profile create alice
-pinchtab profile create bob
+- tabs are runtime objects
+- tabs disappear when the instance stops
+- profiles persist, but open tabs do not
 
-# Start instances with profiles
-curl -X POST http://localhost:9867/instances/start \
-  -d '{"profileId": "alice-profile-id"}'
+That means the persistent part is the **profile state**, not the tab list.
 
-curl -X POST http://localhost:9867/instances/start \
-  -d '{"profileId": "bob-profile-id"}'
+## Element references
 
-# Each instance has isolated cookies/auth
-```
+Snapshots return element references such as `e0`, `e1`, `e2`, and so on.
 
-**Login Once, Use Anywhere:**
-```bash
-# Start instance with persistent profile
-curl -X POST http://localhost:9867/instances/start \
-  -d '{"profileId": "work"}'
+These refs are useful because they let you interact with elements without writing CSS selectors for common flows.
 
-# Navigate and log in
-curl -X POST http://localhost:9867/instances/inst_xyz/navigate \
-  -d '{"url": "https://example.com/login"}'
-# ... fill login form, click submit ...
+## Relationships
 
-# Later (even after instance restart): Profile is persistent
-pinchtab instance launch  # Or restart orchestrator
-# Cookies intact, still logged in via profile's saved state
-```
+The implementation is easiest to understand with these rules:
 
----
-
-## Tab
-
-A **browser tab** (webpage) within an instance and its profile.
-
-- Single webpage with its own DOM, URL, accessibility tree
-- Identified by tab ID: `tab_XXXXXXXX` (hash-based, stable)
-- Tabs are ephemeral (don't survive instance restart unless using a profile)
-- Multiple tabs can be open simultaneously in one instance
-- Each tab has stable element references (e0, e1...) for DOM interaction
-- Can navigate, take snapshots, execute actions, evaluate JavaScript
-
-```bash
-# Create tab in instance (returns tabId)
-curl -X POST http://localhost:9867/instances/inst_0a89a5bb/tabs/open \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com"}' | jq '.tabId'
-# Returns: "tab_abc123"
-
-# Or via CLI
-pinchtab tab open inst_0a89a5bb https://example.com
-
-# Get tab info
-curl http://localhost:9867/tabs/tab_abc123 | jq .
-
-# Navigate tab
-curl -X POST http://localhost:9867/instances/inst_0a89a5bb/navigate \
-  -d '{"url": "https://google.com"}'
-
-# Take snapshot (DOM structure)
-curl http://localhost:9867/instances/inst_0a89a5bb/snapshot | jq .
-
-# Interact with tab (click, type, etc.)
-curl -X POST http://localhost:9867/instances/inst_0a89a5bb/action \
-  -d '{"kind": "click", "ref": "e5"}'
-
-# Close tab
-curl -X POST http://localhost:9867/tabs/tab_abc123/close
-
-# Or via CLI
-pinchtab tab close tab_abc123
-```
-
-**See:** [Tabs API Reference](references/tabs-api.md) for complete operations.
-
----
-
-## Hierarchy
-
-```text
-PinchTab Orchestrator (HTTP server on port 9867)
-  │
-  ├── Instance 1 (inst_0a89a5bb, port 9868, temp profile)
-  │     ├── Tab 1 (tab_xyz123, https://example.com)
-  │     ├── Tab 2 (tab_xyz124, https://google.com)
-  │     └── Tab 3 (tab_xyz125, https://github.com)
-  │
-  ├── Instance 2 (inst_1b9a5dcc, port 9869, profile: work)
-  │     ├── Tab 1 (tab_abc001, internal dashboard, logged in as alice)
-  │     └── Tab 2 (tab_abc002, internal docs)
-  │
-  └── Instance 3 (inst_2c8a5eef, port 9870, profile: personal)
-        ├── Tab 1 (tab_def001, gmail, logged in as bob@example.com)
-        └── Tab 2 (tab_def002, bank.com)
-```
-
----
-
-## Relationships & Constraints
-
-| Relationship | Rule |
+| Relationship | What is true today |
 |---|---|
-| **Tabs → Instance** | Every tab must exist in exactly one instance |
-| **Tabs → Profile** | Every tab inherits the instance's profile (zero or one) |
-| **Profile → Instance** | Every profile belongs to exactly one instance |
-| **Instance → Profile** | An instance has zero or one profile |
-| **Instance → Chrome** | One instance = one Chrome process |
+| Server -> Instances | One server can manage many instances |
+| Bridge -> Chrome | One bridge owns one Chrome process |
+| Instance -> Profile | An instance has zero or one profile |
+| Profile -> Instance | A profile can have zero or one active managed instance at a time |
+| Instance -> Tabs | An instance can have many tabs |
+| Tab -> Instance | Every tab belongs to exactly one instance |
+| Tab -> Profile | A tab inherits the instance profile, if one exists |
 
----
+Profiles are reusable persistent state. Instances are temporary runtimes that may use a profile.
 
-## Common Workflows
+## Shorthand routes vs explicit routes
 
-### Workflow 1: Single Instance, Multiple Tabs
+PinchTab exposes two styles of interaction:
 
-```bash
-# Terminal 1: Start orchestrator
-pinchtab
+### Explicit routes
 
-# Terminal 2: Create instance
-INST=$(pinchtab instance launch --mode headless)
-# Returns: inst_0a89a5bb
+These always name the resource you want:
 
-# Create multiple tabs in the same instance
-curl -X POST http://localhost:9867/instances/$INST/tabs/open \
-  -d '{"url":"https://example.com"}'
+- `POST /instances/start`
+- `POST /instances/{id}/tabs/open`
+- `GET /tabs/{id}/snapshot`
+- `POST /tabs/{id}/action`
 
-curl -X POST http://localhost:9867/instances/$INST/tabs/open \
-  -d '{"url":"https://google.com"}'
+This is the clearest model for multi-instance work.
 
-# List all tabs across all instances
-curl http://localhost:9867/tabs | jq .
+### Shorthand routes
 
-# Or tabs in specific instance
-curl http://localhost:9867/instances/$INST/tabs | jq .
-```
+These omit the instance and sometimes the tab:
 
-### Workflow 2: Multiple Instances, Separate Profiles
+- `POST /navigate`
+- `GET /snapshot`
+- `POST /action`
+- `GET /text`
 
-```bash
-# Create persistent profiles for Alice and Bob
-pinchtab profile create alice
-pinchtab profile create bob
+These route to the "current" or first running instance.
 
-# Get profile IDs
-ALICE_ID=$(pinchtab profiles | jq -r '.[] | select(.name=="alice") | .id')
-BOB_ID=$(pinchtab profiles | jq -r '.[] | select(.name=="bob") | .id')
+## Recommended mental model
 
-# Start instance for Alice
-INST_ALICE=$(curl -X POST http://localhost:9867/instances/start \
-  -d '{"profileId":"'$ALICE_ID'"}' | jq -r '.id')
+For most users, this is the right sequence:
 
-# Start instance for Bob
-INST_BOB=$(curl -X POST http://localhost:9867/instances/start \
-  -d '{"profileId":"'$BOB_ID'"}' | jq -r '.id')
+1. start the server with `pinchtab`
+2. create a profile if you need persistence
+3. start an instance from that profile
+4. open one or more tabs in that instance
+5. snapshot a tab
+6. act on refs from that snapshot
 
-# Create tabs in both instances with isolated cookies
-curl -X POST http://localhost:9867/instances/$INST_ALICE/tabs/open \
-  -d '{"url":"https://app.example.com"}'
+If you do not need persistence:
 
-curl -X POST http://localhost:9867/instances/$INST_BOB/tabs/open \
-  -d '{"url":"https://app.example.com"}'
+1. start an instance without `profileId`
+2. use it normally
+3. stop it when done
+4. let PinchTab delete the temporary profile automatically
 
-# Login in each instance separately — profiles keep sessions isolated
-```
+## Example workflows
 
-### Workflow 3: Ephemeral Instance (No Profile)
+### Workflow 1: persistent logged-in browser
 
 ```bash
-# Create instance without persistent profile (temporary auto-generated)
-INST=$(pinchtab instance launch)
+PROFILE_ID=$(curl -s -X POST http://localhost:9867/profiles \
+  -H "Content-Type: application/json" \
+  -d '{"name":"work"}' | jq -r '.id')
 
-# Create tab, use it
-curl -X POST http://localhost:9867/instances/$INST/tabs/open \
-  -d '{"url":"https://example.com"}'
-# ... work ...
+INST=$(curl -s -X POST http://localhost:9867/instances/start \
+  -H "Content-Type: application/json" \
+  -d "{\"profileId\":\"$PROFILE_ID\",\"mode\":\"headed\"}" | jq -r '.id')
 
-# Stop instance
-pinchtab instance stop $INST
+TAB=$(curl -s -X POST http://localhost:9867/instances/$INST/tabs/open \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://pinchtab.com/login"}' | jq -r '.tabId')
 
-# Tab is gone, all cookies gone — clean slate next time
+curl http://localhost:9867/tabs/$TAB/snapshot
 ```
 
-### Workflow 4: Polling for Instance Ready Status
+Use this when you want cookies and account state to survive instance restarts.
+
+### Workflow 2: disposable run
 
 ```bash
-# Create instance (returns with status "starting")
-INST=$(pinchtab instance launch | jq -r '.id')
+INST=$(curl -s -X POST http://localhost:9867/instances/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"headless"}' | jq -r '.id')
 
-# Poll until running (monitor's health check initializes Chrome)
-while true; do
-  STATUS=$(curl http://localhost:9867/instances/$INST | jq -r '.status')
-  if [ "$STATUS" == "running" ]; then
-    echo "Instance ready!"
-    break
-  fi
-  echo "Instance status: $STATUS, waiting..."
-  sleep 0.5
-done
+TAB=$(curl -s -X POST http://localhost:9867/instances/$INST/tabs/open \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}' | jq -r '.tabId')
 
-# Now safe to make requests to the instance
-curl -X POST http://localhost:9867/instances/$INST/navigate \
-  -d '{"url":"https://example.com"}'
+curl http://localhost:9867/tabs/$TAB/text
+
+curl -X POST http://localhost:9867/instances/$INST/stop
 ```
 
----
-
-## Mental Model
-
-```
-What you control         │ What it is               │ Identified by
-─────────────────────────┼──────────────────────────┼─────────────────────
-PinchTab Orchestrator    │ HTTP server controller   │ port (9867 default)
-Instance                 │ Chrome process           │ inst_XXXXXXXX (hash ID)
-Profile (optional)       │ Browser state directory  │ prof_XXXXXXXX (hash ID)
-Tab                      │ Single webpage           │ tab_XXXXXXXX (hash ID)
-```
+Use this when you want a clean, throwaway session.
 
 ## Summary
 
-- **PinchTab Orchestrator** is the HTTP server that manages everything
-- **Instance** is a running Chrome process with optional profile and multiple tabs
-- **Profile** is optional persistent browser state (cookies, auth, history)
-- **Tab** is the actual webpage you navigate and interact with
-
-**Key insights:**
-- Instances are launched via API and auto-allocated unique ports (9868-9968)
-- Instances are lazy: Chrome initializes on first request, not at creation time
-- Profiles are optional but provide persistent state across instance restarts
-- Tabs are ephemeral unless using a persistent profile
-- Instance + Profile + Tabs = the complete mental model for using PinchTab effectively
-
-**Next:** See [Instance API Reference](references/instance-api.md), [Tabs API Reference](references/tabs-api.md), and [Profile API Reference](references/profile-api.md) for complete endpoint documentation.
+The durable object in PinchTab is the **profile**.
+The runtime object is the **instance**.
+The page object is the **tab**.
+The **server** manages them, and the **bridge** executes them.

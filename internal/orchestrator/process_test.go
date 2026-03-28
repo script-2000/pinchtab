@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	"github.com/pinchtab/pinchtab/internal/bridge"
-	"github.com/pinchtab/pinchtab/internal/idutil"
+	"github.com/pinchtab/pinchtab/internal/ids"
 )
 
 type mockRunner struct {
 	runCalled bool
 	portAvail bool
+	args      []string
+	env       []string
+	runErr    error
 }
 
 type mockCmd struct {
@@ -23,8 +26,13 @@ func (m *mockCmd) Wait() error { return nil }
 func (m *mockCmd) PID() int    { return m.pid }
 func (m *mockCmd) Cancel()     {}
 
-func (m *mockRunner) Run(ctx context.Context, binary string, env []string, stdout, stderr io.Writer) (Cmd, error) {
+func (m *mockRunner) Run(ctx context.Context, binary string, args []string, env []string, stdout, stderr io.Writer) (Cmd, error) {
 	m.runCalled = true
+	m.args = append([]string(nil), args...)
+	m.env = append([]string(nil), env...)
+	if m.runErr != nil {
+		return nil, m.runErr
+	}
 	return &mockCmd{pid: 1234, isAlive: true}, nil
 }
 
@@ -33,10 +41,14 @@ func (m *mockRunner) IsPortAvailable(port string) bool {
 }
 
 func TestLaunch_Mocked(t *testing.T) {
+	old := portAvailableFunc
+	portAvailableFunc = func(int) bool { return true }
+	defer func() { portAvailableFunc = old }()
+
 	runner := &mockRunner{portAvail: true}
 	o := NewOrchestratorWithRunner(t.TempDir(), runner)
 
-	inst, err := o.Launch("test-prof", "9999", true)
+	inst, err := o.Launch("test-prof", "9999", true, nil)
 	if err != nil {
 		t.Fatalf("Launch failed: %v", err)
 	}
@@ -44,16 +56,23 @@ func TestLaunch_Mocked(t *testing.T) {
 	if !runner.runCalled {
 		t.Error("expected runner.Run to be called")
 	}
-	if !idutil.IsValidID(inst.ID, "inst") {
+	if len(runner.args) != 1 || runner.args[0] != "bridge" {
+		t.Fatalf("expected child process args [bridge], got %v", runner.args)
+	}
+	if !ids.IsValidID(inst.ID, "inst") {
 		t.Errorf("expected ID format inst_XXXXXXXX, got %s", inst.ID)
 	}
 }
 
 func TestLaunch_PortConflict(t *testing.T) {
+	old := portAvailableFunc
+	portAvailableFunc = func(int) bool { return true }
+	defer func() { portAvailableFunc = old }()
+
 	runner := &mockRunner{portAvail: false}
 	o := NewOrchestratorWithRunner(t.TempDir(), runner)
 
-	_, err := o.Launch("test-prof", "9999", true)
+	_, err := o.Launch("test-prof", "9999", true, nil)
 	if err == nil {
 		t.Fatal("expected error for unavailable port")
 	}

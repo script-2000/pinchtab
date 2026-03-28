@@ -1,258 +1,228 @@
 # Dashboard
 
-PinchTab includes a built-in web dashboard for monitoring and managing instances, profiles, and agent activity.
+PinchTab includes a built-in web dashboard for monitoring instances, managing profiles, and editing configuration.
 
-Access the dashboard at **`http://localhost:9867`** (adjust port if needed).
+The dashboard is part of the full server:
 
-Alternatively, use **`http://localhost:9867/dashboard`** (also works for backward compatibility).
+- `pinchtab` or `pinchtab server` starts the full server and serves the dashboard
+- `pinchtab bridge` does not serve the dashboard
 
----
+You can open the dashboard at:
 
-## Dashboard Overview
+- `http://localhost:9867`
+- `http://localhost:9867/dashboard`
 
-The dashboard provides four main screens:
-
-1. **Instances** — View and manage running Chrome instances
-2. **Profiles** — Browse and launch saved browser profiles
-3. **Profile Details** — Configure and launch a specific profile
-4. **Agents Feed** — Monitor agent activity and automation workflows
+> [!WARNING]
+> The dashboard is an operator/admin control surface, not a public or multi-user application. Do not expose it to untrusted users. Anyone who can use the dashboard can manage profiles, instances, configuration, and other browser-control capabilities that are enabled on that server.
 
 ---
 
-## Instances Screen
+## Dashboard overview
 
-> **Screenshot placeholder:** Instances view
+The current dashboard exposes three main pages:
 
-### What It Shows
+1. **Monitoring**
+2. **Profiles**
+3. **Settings**
 
-- List of all running PinchTab instances
-- Port number for each instance
-- Instance status (running, stopped, idle)
-- Number of tabs in each instance
-- Profile name (if any) for each instance
-
-### What You Can Do
-
-- **View details** — Click an instance to see full information
-- **Create new instance** — Start a new Chrome process
-- **Stop instance** — Shut down a running instance
-- **View tabs** — See all tabs open in the instance
-
-### Use Cases
-
-- Monitor multiple instances running in parallel
-- Check resource usage per instance
-- Stop instances when no longer needed
-- Debug instance configuration
+The UI is a React SPA served by the Go server.
 
 ---
 
-## Profiles Screen
+## Monitoring page
 
-> **Screenshot placeholder:** Profiles view
+![Dashboard Instances](media/dashboard-instances.jpeg)
 
-### What It Shows
+The Monitoring page is the default view.
 
-- Grid of all available browser profiles
-- Each profile card displays:
-  - Profile name
-  - Associated email/account (if available)
-  - Last used timestamp
-  - Current status (running, stopped)
-  - Quick info (cookies count, stored data size)
+It shows:
 
-### What You Can Do
+- running and stopped instances
+- selected-instance details
+- open tabs for the selected instance
+- charted monitoring data
+- optional memory metrics when enabled in settings
 
-- **Launch profile** — Start a new instance with this profile
-- **View details** — Click profile card to see configuration details
-- **Edit profile** — Modify profile settings (name, metadata)
-- **Delete profile** — Remove a profile (with confirmation)
-- **Search/filter** — Find profiles by name or account
+What you can do:
 
-### Use Cases
+- select an instance
+- inspect its port, mode, and status
+- view its open tabs
+- stop a running instance
 
-- Quickly launch a profile for a specific user account
-- Switch between different login contexts
-- See which profiles are currently active
-- Manage multiple user sessions
+Operational data comes from:
 
----
-
-## Profile Details Screen
-
-> **Screenshot placeholder:** Profile details view
-
-### What It Shows
-
-- **Profile name** — Editable identifier
-- **Account info** — Associated email, username, or account ID
-- **Launch settings**:
-  - Headless or headed mode
-  - Port assignment
-  - Stealth level (light, medium, full)
-  - Environment variables
-- **State info**:
-  - Created date
-  - Last modified
-  - Data size (cookies, storage, cache)
-  - Number of saved tabs
-- **Instances using this profile** — Currently running instances
-
-### What You Can Do
-
-- **Launch** — Start a new instance with this profile
-- **Edit** — Modify profile configuration
-- **View data** — See stored cookies, local storage, browsing history
-- **Clear data** — Reset cookies/cache while keeping profile
-- **Export** — Backup profile configuration
-- **Delete** — Remove profile entirely
-
-### Use Cases
-
-- Configure launch options before starting an instance
-- Check what data is stored in a profile
-- Clone a profile for a similar use case
-- Debug profile-related issues
+- SSE updates on `GET /api/events`
+- instance lists from `GET /instances`
+- tab data from `GET /instances/{id}/tabs`
+- optional memory data from `GET /instances/metrics`
 
 ---
 
-## Agents Feed Screen
+## Profiles page
 
-> **Screenshot placeholder:** Agents feed view
+![Dashboard Profiles](media/dashboard-profiles.jpeg)
 
-### What It Shows
+The Profiles page manages saved browser profiles.
 
-- Real-time activity log from all connected agents
-- Each entry displays:
-  - Timestamp
-  - Agent name/ID
-  - Action performed (navigated, clicked, extracted text, etc.)
-  - Associated instance/profile
-  - Result (success, error, pending)
+It shows:
 
-### What You Can Do
+- available profiles
+- launch and stop actions
+- profile metadata such as name, path, size, source, and account details
 
-- **Monitor agents** — Watch what automation is happening in real-time
-- **Filter by agent** — Show only activity from a specific agent
-- **Filter by instance** — Show only activity in a specific instance
-- **Search** — Find activities by action, URL, or data
-- **View details** — Click an entry to see full request/response
-- **Pause/resume** — Control logging verbosity
+What you can do:
 
-### Use Cases
+- create a new profile
+- launch a profile as a managed instance
+- stop the running instance for a profile
+- edit profile metadata
+- delete a profile
+- open a profile details modal
 
-- Debug agent automation workflows
-- Audit what agents have done
-- Monitor for errors or unexpected behavior
-- Understand which agents are most active
-- Troubleshoot automation issues
-
----
-
-## Navigation
-
-The dashboard header provides tabs to switch between screens:
-
-```text
-[Instances] | [Profiles] | [Profile Details] | [Agents]
-```
-
-You can also navigate by clicking:
-- An instance → shows its details
-- A profile → shows its profile details screen
-- An agent event → shows relevant instance/profile
-
----
-
-## Status Indicators
-
-### Instance Status
-- **Running** (green) — Active Chrome process
-- **Idle** (yellow) — Running but no tabs
-- **Stopped** (red) — Process not running
-
-### Profile Status
-- **Active** (green) — At least one instance using it
-- **Dormant** (gray) — No active instances
-- **Launching** (blue) — Instance starting
-
-### Agent Status
-- **Success** (green) — Action completed
-- **Error** (red) — Action failed
-- **Pending** (yellow) — In progress
-- **Cancelled** (gray) — Aborted
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `R` | Refresh current screen |
-| `Esc` | Go back / Close modal |
-| `Ctrl+K` | Search |
-| `Ctrl+1` | Instances tab |
-| `Ctrl+2` | Profiles tab |
-| `Ctrl+3` | Profile Details tab |
-| `Ctrl+4` | Agents Feed tab |
-
----
-
-## Dark Mode
-
-The dashboard automatically uses your system's dark/light preference.
-
-Toggle manually:
-- Click the theme toggle in the top-right corner (sun/moon icon)
-- Preference is saved in browser local storage
-
----
-
-## Performance & Limits
-
-- **Refresh rate**: Real-time updates (WebSocket-based)
-- **History retention**: Last 1000 agent events (older events archived)
-- **Scalability**: Optimized for 10+ instances, 100+ profiles
-
-For high-throughput monitoring, consider using the REST API directly:
+The launch flow uses the server APIs behind the scenes:
 
 ```bash
-# Get all instances
-curl http://localhost:9867/instances
-
-# Get all profiles
-curl http://localhost:9867/profiles
-
-# Stream agent events
-curl http://localhost:9867/events/stream
+curl -X POST http://localhost:9867/profiles \
+  -H "Content-Type: application/json" \
+  -d '{"name":"work","useWhen":"Team account workflows"}'
+# Response
+{
+  "status": "created",
+  "id": "prof_278be873",
+  "name": "work"
+}
 ```
+
+```bash
+curl -X POST http://localhost:9867/instances/start \
+  -H "Content-Type: application/json" \
+  -d '{"profileId":"prof_278be873","mode":"headed"}'
+# CLI Alternative
+pinchtab instance start --profile prof_278be873 --mode headed
+# Response
+{
+  "id": "inst_ea2e747f",
+  "profileId": "prof_278be873",
+  "profileName": "work",
+  "port": "9868",
+  "headless": false,
+  "status": "starting"
+}
+```
+
+---
+
+## Profile details modal
+
+Profile details are shown in a modal, not as a separate top-level page.
+
+The modal currently includes tabs for:
+
+- **Profile**
+- **Live**
+- **Logs**
+
+From there you can:
+
+- view the profile ID and metadata
+- edit name and `useWhen`
+- inspect live tabs for a running instance
+- open a screencast tile for tab previews
+
+---
+
+## Settings page
+
+![Dashboard Settings](media/dashboard-settings.jpeg)
+
+The Settings page combines local dashboard preferences with backend configuration.
+
+It includes sections for:
+
+- Dashboard
+- Instance Defaults
+- Orchestration
+- Security
+- Profiles
+- Network & Attach
+- Browser Runtime
+- Timeouts
+
+What you can do:
+
+- change local dashboard preferences such as monitoring and screencast settings
+- load backend config from `GET /api/config`
+- save backend config through `PUT /api/config`
+- see whether a restart is required for server-level changes
+
+The health payload also surfaces summary info:
+
+```bash
+curl http://localhost:9867/health | jq .
+# Response
+{
+  "status": "ok",
+  "mode": "dashboard",
+  "profiles": 3,
+  "instances": 1,
+  "agents": 0,
+  "restartRequired": false
+}
+```
+
+---
+
+## Event stream
+
+The dashboard uses Server-Sent Events, not WebSockets.
+
+Primary stream endpoint:
+
+```bash
+curl http://localhost:9867/api/events
+```
+
+This stream carries:
+
+- `init`
+- `action`
+- `system`
+- `monitoring`
+
+---
+
+## Build note
+
+If the React dashboard assets are not built into the binary, the server serves a fallback page telling you to build the dashboard bundle.
 
 ---
 
 ## Troubleshooting
 
-### Dashboard Not Loading
+### Dashboard not loading
 
-- Check if PinchTab is running: `curl http://localhost:9867/health`
-- Check the port: Default is `9867`, adjust if you started with `--port`
-- Clear browser cache: `Ctrl+Shift+Delete` (most browsers)
+```bash
+curl http://localhost:9867/health
+```
 
-### No Instances Showing
+If the server is up, try:
 
-- Make sure at least one instance is running: `pinchtab --port 9867`
-- Refresh the page (`R` key)
-- Check browser console for errors (`F12`)
+- `http://localhost:9867`
+- `http://localhost:9867/dashboard`
 
-### Agent Events Not Updating
+### No instances visible
 
-- Confirm agents are actually running tasks
-- Check WebSocket connection: Open DevTools → Network → WS tab
-- Try refreshing the page
+Start one:
 
----
+```bash
+curl -X POST http://localhost:9867/instances/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"headless"}'
+# CLI Alternative
+pinchtab instance start
+```
 
-## Next Steps
+### No live profile preview
 
-- [Core Concepts](core-concepts.md) — Understand instances, profiles, tabs
-- [Get Started](get-started.md) — Set up your first profile
-- [Headless vs Headed](headless-vs-headed.md) — Choose the right mode
+The profile must have a running instance before the Live tab in the profile details modal can show live tab data.

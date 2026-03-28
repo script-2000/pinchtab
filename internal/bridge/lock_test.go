@@ -52,6 +52,7 @@ func TestLockManagerGet(t *testing.T) {
 	info := m.Get(tabID)
 	if info == nil {
 		t.Fatal("expected info")
+		return
 	}
 	if info.Owner != owner {
 		t.Errorf("expected owner %s, got %s", owner, info.Owner)

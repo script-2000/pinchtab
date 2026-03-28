@@ -1,114 +1,86 @@
-# Chrome Instances
+# Identifying Instances
 
-Running multiple Chrome instances? Here's how to tell Pinchtab's apart from your regular browser.
+When you run PinchTab alongside your normal browser, the easiest way to distinguish its Chrome processes is to combine three signals:
 
-## 1. Rename the Chrome binary (recommended)
+- a dedicated Chrome binary name
+- recognizable command-line flags
+- the PinchTab dashboard and instance metadata
 
-Copy Chrome to a custom name — changes the actual process name in `ps`, Activity Monitor, Task Manager:
+## 1. Use A Distinct Chrome Binary Name
+
+If you copy Chrome or Chromium to a custom filename, that filename appears in process listings.
 
 ```bash
-# macOS
+# macOS example
 cp "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" /usr/local/bin/pinchtab-chrome
-
-# Linux
-cp $(which google-chrome) /usr/local/bin/pinchtab-chrome
-
 chmod +x /usr/local/bin/pinchtab-chrome
+
+# Set in config.json
+pinchtab config set browser.binary /usr/local/bin/pinchtab-chrome
+pinchtab server
 ```
 
-Then point Pinchtab at it:
+Now a process listing such as `ps -axo pid,command | rg pinchtab-chrome` gives you a quick way to spot the browser PinchTab launches.
+
+## 2. Add Recognizable Chrome Flags
+
+Extra Chrome flags are configured through `browser.extraFlags` in `config.json`:
+
+```json
+{
+  "browser": {
+    "extraFlags": "--user-agent=PinchTab-Automation/1.0 --disable-dev-shm-usage"
+  }
+}
+```
+
+Those flags appear in the Chrome command line, which makes process inspection easier:
 
 ```bash
-CHROME_BIN=/usr/local/bin/pinchtab-chrome pinchtab
+ps -axo pid,command | rg 'PinchTab-Automation|user-data-dir'
 ```
 
-Now `ps aux | grep pinchtab-chrome` instantly identifies the Chrome processes. Name it whatever you want — `ai-agent-chrome`, `bot-chrome`, etc.
+Use this when you want to differentiate roles such as “scraper”, “monitor”, or “debug”.
 
-## 2. Add custom Chrome flags (visible in process)
+## 3. Use Profile Paths As An Identifier
+
+Each managed profile lives under the configured profile base directory. By default that is the OS-specific PinchTab config directory under `profiles/`.
+
+PinchTab-launched Chrome processes include a `--user-data-dir=...` argument that points at that profile location. That is often the fastest way to confirm that a browser process belongs to PinchTab rather than your personal Chrome profile.
+
+## 4. Use The Dashboard For The Most Reliable View
+
+Open the dashboard at:
+
+- `http://localhost:9867/`
+- or `http://localhost:9867/dashboard`
+
+The dashboard and instance APIs show:
+
+- instance IDs
+- profile IDs and profile names
+- assigned ports
+- headless vs headed mode
+- current status
+
+If you need an API-based view instead of the UI:
 
 ```bash
-CHROME_FLAGS="--user-agent=Custom-Agent/1.0" pinchtab
+curl http://localhost:9867/instances
 ```
 
-Custom flags show up in the full process command line:
+## Practical Combination
 
-```bash
-ps aux | grep pinchtab
-# Shows Chrome processes with custom flags
-```
+For most setups, this combination is enough:
 
-Useful for identifying different agent roles:
-
-```bash
-# Scraper agent (with custom flag)
-CHROME_FLAGS="--user-agent=Scraper/1.0" pinchtab &
-
-# Monitor agent (different flag)
-BRIDGE_PORT=9868 CHROME_FLAGS="--user-agent=Monitor/1.0" pinchtab &
-```
-
-## 3. Separate profile directory (built-in)
-
-Each Pinchtab profile gets its own directory under `~/.pinchtab/profiles/<name>/` — completely separate from your real Chrome profile. 
-
-Instance Chrome processes show `--user-data-dir=/.../.pinchtab/profiles/...` in their args.
-
-When you create instances via API, they automatically use isolated profiles.
-
-## 4. Identify via Dashboard
-
-The easiest way: Open the dashboard at `http://localhost:9867/dashboard`
-
-You'll see:
-- Instance IDs (`inst_XXXXXXXX`)
-- Which profile each instance uses
-- Whether it's headed or headless
-- When it was started
-- Current status
-
-## Full example
-
-```bash
-# Start orchestrator with custom Chrome binary
-CHROME_BIN=/usr/local/bin/pinchtab-chrome pinchtab
-```
-
-Or for agents/instances with custom Chrome flags:
-
-```bash
-# Orchestrator
-CHROME_BIN=/usr/local/bin/pinchtab-chrome pinchtab &
-
-# Create instances with identifying info
-# View in dashboard: http://localhost:9867/dashboard
-curl -X POST http://localhost:9867/instances/launch \
-  -d '{"mode":"headless"}'
-  
-# Instance appears in dashboard with its ID, port, profile info
-```
+1. point PinchTab to a renamed Chrome binary via `browser.binary` in config
+2. add a recognizable `browser.extraFlags` marker in config
+3. verify the profile path or instance ID in the dashboard
 
 ## Docker
 
-Volume-mount your renamed binary and set the env var:
+The same approach works in containers:
 
-```dockerfile
-FROM alpine:latest
-
-COPY pinchtab-chrome /usr/local/bin/pinchtab-chrome
-RUN chmod +x /usr/local/bin/pinchtab-chrome
-
-ENV CHROME_BIN=/usr/local/bin/pinchtab-chrome
-
-EXPOSE 9867
-
-CMD ["pinchtab"]
-```
-
-## Tips
-
-- **[Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/)** provides standalone Chrome binaries — no installer, won't conflict with system Chrome. Ideal for automation setups.
-- **`chrome-headless-shell`** from the same source is even smaller — headless-only, perfect for server deployments.
-- The orchestrator process is always `pinchtab`, so `pkill -f pinchtab` cleanly shuts down all instances.
-- Instance IDs (`inst_XXXXXXXX`) are hash-based and stable — great for identifying instances in logs, dashboards, and monitoring.
-- Combine approaches (renamed binary + custom flags + dashboard visibility) for maximum clarity in production.
-- The dashboard shows all running instances with their profiles, status, and real-time activity — easiest way to identify what's running.
+- set `browser.binary` in config if you need to override the bundled browser path
+- put identifying flags in `browser.extraFlags`
+- inspect the instance list from the API or dashboard rather than relying only on process names inside the container

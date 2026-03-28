@@ -11,6 +11,37 @@ import (
 	"github.com/pinchtab/pinchtab/internal/bridge"
 )
 
+// userConfigDir returns the OS-appropriate app config directory.
+// For backwards compatibility, if ~/.pinchtab exists and the new location
+// doesn't, it returns ~/.pinchtab.
+func userConfigDir() string {
+	h, _ := os.UserHomeDir()
+	legacyPath := filepath.Join(h, ".pinchtab")
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return legacyPath
+	}
+
+	newPath := filepath.Join(configDir, "pinchtab")
+
+	// Backwards compatibility: if legacy location exists and new doesn't, use legacy
+	if dirExists(legacyPath) && !dirExists(newPath) {
+		return legacyPath
+	}
+
+	return newPath
+}
+
+// dirExists checks if a directory exists
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
+
 type ActionTracker struct {
 	logs map[string][]bridge.ActionRecord
 	mu   sync.RWMutex
@@ -70,8 +101,7 @@ func (t *ActionTracker) Analyze(profile string) bridge.AnalyticsReport {
 }
 
 func (t *ActionTracker) save() error {
-	h, _ := os.UserHomeDir()
-	path := filepath.Join(h, ".pinchtab", "action_logs.json")
+	path := filepath.Join(userConfigDir(), "action_logs.json")
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
 
 	data, err := json.Marshal(t.logs)
@@ -82,8 +112,7 @@ func (t *ActionTracker) save() error {
 }
 
 func (t *ActionTracker) load() error {
-	h, _ := os.UserHomeDir()
-	path := filepath.Join(h, ".pinchtab", "action_logs.json")
+	path := filepath.Join(userConfigDir(), "action_logs.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err

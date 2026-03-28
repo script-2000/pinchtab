@@ -1,96 +1,46 @@
 package main
 
 import (
-	"context"
-	"log/slog"
-	"net/http"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
+	"fmt"
+	"strings"
 
-	"github.com/pinchtab/pinchtab/internal/assets"
-	"github.com/pinchtab/pinchtab/internal/bridge"
-	"github.com/pinchtab/pinchtab/internal/config"
-	"github.com/pinchtab/pinchtab/internal/handlers"
+	"github.com/pinchtab/pinchtab/internal/server"
+	"github.com/spf13/cobra"
 )
 
-// runBridgeServer starts a bridge server without orchestrator or dashboard
-// This is used for spawned instances by the orchestrator
-func runBridgeServer(cfg *config.RuntimeConfig) {
-	listenAddr := cfg.ListenAddr()
-	slog.Info("🦀 Pinchtab Bridge Server", "listen", listenAddr, "profile", cfg.ProfileDir)
+var bridgeEngine string
 
-	// Create a bridge instance with lazy initialization
-	// Chrome will be initialized on first request via ensureChrome()
-	bridgeInstance := bridge.New(context.Background(), nil, cfg)
-	bridgeInstance.StealthScript = assets.StealthScript
-
-	mux := http.NewServeMux()
-
-	// Register all bridge handlers
-	h := handlers.New(bridgeInstance, cfg, nil, nil, nil)
-	shutdownOnce := &sync.Once{}
-	doShutdown := func() {
-		shutdownOnce.Do(func() {
-			slog.Info("shutting down bridge server...")
-		})
-	}
-	h.RegisterRoutes(mux, doShutdown)
-
-	// HTTP server
-	server := &http.Server{
-		Addr:              listenAddr,
-		Handler:           loggingMiddleware(mux),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	go func() {
-		slog.Info("bridge server listening", "addr", listenAddr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "err", err)
-			os.Exit(1)
+var bridgeCmd = &cobra.Command{
+	Use:   "bridge",
+	Short: "Start single-instance bridge-only server",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := loadConfig()
+		engineMode, err := resolveBridgeEngine(bridgeEngine, cfg.Engine)
+		if err != nil {
+			return err
 		}
-	}()
+		cfg.Engine = engineMode
+		server.RunBridgeServer(cfg)
+		return nil
+	},
+}
 
-	// Graceful shutdown on signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	doShutdown()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		slog.Error("shutdown error", "err", err)
+func resolveBridgeEngine(flagValue, configValue string) (string, error) {
+	engineMode := strings.ToLower(strings.TrimSpace(configValue))
+	if strings.TrimSpace(flagValue) != "" {
+		engineMode = strings.ToLower(strings.TrimSpace(flagValue))
 	}
+	if engineMode == "" {
+		engineMode = "chrome"
+	}
+	if engineMode != "chrome" && engineMode != "lite" && engineMode != "auto" {
+		return "", fmt.Errorf("invalid --engine %q (expected chrome, lite, or auto)", engineMode)
+	}
+	return engineMode, nil
 }
 
-// Simple middleware to log HTTP requests
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		recorder := &statusRecorder{ResponseWriter: w, statusCode: 200}
-
-		next.ServeHTTP(recorder, r)
-
-		slog.Info("request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", recorder.statusCode,
-			"ms", time.Since(start).Milliseconds(),
-		)
-	})
-}
-
-type statusRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (r *statusRecorder) WriteHeader(code int) {
-	r.statusCode = code
-	r.ResponseWriter.WriteHeader(code)
+func init() {
+	bridgeCmd.GroupID = "primary"
+	bridgeCmd.Flags().StringVar(&bridgeEngine, "engine", "", "Bridge engine: chrome, lite, or auto (overrides config)")
+	rootCmd.AddCommand(bridgeCmd)
 }

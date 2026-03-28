@@ -55,7 +55,7 @@ func TestMarkCleanExit_NoPatch(t *testing.T) {
 func TestSessionState_Marshal(t *testing.T) {
 	state := SessionState{
 		Tabs: []TabState{
-			{ID: "tab1", URL: "https://example.com", Title: "Example"},
+			{ID: "tab1", URL: "https://pinchtab.com", Title: "Example"},
 			{ID: "tab2", URL: "https://google.com", Title: "Google"},
 		},
 		SavedAt: "2026-02-17T07:00:00Z",
@@ -74,8 +74,8 @@ func TestSessionState_Marshal(t *testing.T) {
 	if len(decoded.Tabs) != 2 {
 		t.Errorf("expected 2 tabs, got %d", len(decoded.Tabs))
 	}
-	if decoded.Tabs[0].URL != "https://example.com" {
-		t.Errorf("expected example.com, got %s", decoded.Tabs[0].URL)
+	if decoded.Tabs[0].URL != "https://pinchtab.com" {
+		t.Errorf("expected pinchtab.com, got %s", decoded.Tabs[0].URL)
 	}
 }
 
@@ -139,21 +139,42 @@ func TestIsTransientURL(t *testing.T) {
 		"http://localhost:3000/dashboard",
 	}
 	for _, u := range transient {
-		if !isTransientURL(u) {
+		if !IsTransientURL(u) {
 			t.Errorf("expected transient: %s", u)
 		}
 	}
 
 	persistent := []string{
-		"https://example.com",
+		"https://pinchtab.com",
 		"https://github.com/pinchtab/pinchtab",
 		"https://www.google.com/search?q=test",
 		"https://httpbin.org/get",
 	}
 	for _, u := range persistent {
-		if isTransientURL(u) {
+		if IsTransientURL(u) {
 			t.Errorf("expected persistent: %s", u)
 		}
+	}
+}
+
+func TestSafeURLHostForLog(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "https query", raw: "https://example.com/reset?token=secret", want: "example.com"},
+		{name: "subdomain with port", raw: "https://app.example.com:8443/path?q=1", want: "app.example.com"},
+		{name: "malformed", raw: "://bad-url", want: ""},
+		{name: "empty", raw: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := safeURLHostForLog(tt.raw); got != tt.want {
+				t.Fatalf("safeURLHostForLog(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -161,11 +182,59 @@ func TestClearChromeSessions(t *testing.T) {
 	tmp := t.TempDir()
 	sessionsDir := filepath.Join(tmp, "Default", "Sessions")
 	_ = os.MkdirAll(sessionsDir, 0755)
-	_ = os.WriteFile(filepath.Join(sessionsDir, "Session_1"), []byte("data"), 0644)
+
+	// Create the specific session restore files
+	for _, name := range sessionRestoreFiles {
+		_ = os.WriteFile(filepath.Join(sessionsDir, name), []byte("data"), 0644)
+	}
+	// Also create an unrelated file that should NOT be deleted
+	_ = os.WriteFile(filepath.Join(sessionsDir, "Session_1"), []byte("other"), 0644)
 
 	ClearChromeSessions(tmp)
 
+	// Session restore files should be gone
+	for _, name := range sessionRestoreFiles {
+		if _, err := os.Stat(filepath.Join(sessionsDir, name)); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed", name)
+		}
+	}
+
+	// Unrelated files should still exist
+	if _, err := os.Stat(filepath.Join(sessionsDir, "Session_1")); err != nil {
+		t.Error("expected unrelated Session_1 file to remain")
+	}
+}
+
+func TestClearChromeSessions_MissingDir(t *testing.T) {
+	tmp := t.TempDir()
+	sessionsDir := filepath.Join(tmp, "Default", "Sessions")
+	// Don't create the directory
+
+	ClearChromeSessions(tmp)
+
+	// Should not panic, and Sessions dir should still not exist
 	if _, err := os.Stat(sessionsDir); !os.IsNotExist(err) {
-		t.Error("expected Sessions dir to be removed")
+		t.Error("expected Sessions dir to not exist")
+	}
+}
+
+func TestRetryRemove_NonExistent(t *testing.T) {
+	err := retryRemove("/tmp/does-not-exist-at-all", 3)
+	if err != nil {
+		t.Errorf("expected nil for non-existent file, got: %v", err)
+	}
+}
+
+func TestRetryRemove_Success(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "testfile")
+	_ = os.WriteFile(p, []byte("data"), 0644)
+
+	err := retryRemove(p, 3)
+	if err != nil {
+		t.Errorf("expected nil, got: %v", err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Error("expected file to be removed")
 	}
 }

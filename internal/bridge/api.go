@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/target"
+	bridgetabs "github.com/pinchtab/pinchtab/internal/bridge/tabs"
 	"github.com/pinchtab/pinchtab/internal/config"
 )
 
@@ -14,10 +15,9 @@ type BridgeAPI interface {
 	BrowserContext() context.Context
 	TabContext(tabID string) (ctx context.Context, resolvedID string, err error)
 	ListTargets() ([]*target.Info, error)
-	// CreateTab creates a new browser tab and returns a hash-based tab ID (e.g., "tab_XXXXXXXX").
-	// The raw CDP target ID is stored internally and used for CDP operations.
-	CreateTab(url string) (hashTabID string, ctx context.Context, cancel context.CancelFunc, err error)
+	CreateTab(url string) (tabID string, ctx context.Context, cancel context.CancelFunc, err error)
 	CloseTab(tabID string) error
+	FocusTab(tabID string) error
 
 	GetRefCache(tabID string) *RefCache
 	SetRefCache(tabID string, cache *RefCache)
@@ -26,17 +26,38 @@ type BridgeAPI interface {
 	ExecuteAction(ctx context.Context, kind string, req ActionRequest) (map[string]any, error)
 	AvailableActions() []string
 
+	// Execute runs a task for a tab with per-tab sequential execution
+	// and cross-tab bounded parallelism. If not supported, runs directly.
+	Execute(ctx context.Context, tabID string, task func(ctx context.Context) error) error
+
 	TabLockInfo(tabID string) *LockInfo
 	Lock(tabID, owner string, ttl time.Duration) error
 	Unlock(tabID, owner string) error
 
 	EnsureChrome(cfg *config.RuntimeConfig) error
+
+	// Memory metrics
+	GetMemoryMetrics(tabID string) (*MemoryMetrics, error)
+	GetBrowserMemoryMetrics() (*MemoryMetrics, error)
+	GetAggregatedMemoryMetrics() (*MemoryMetrics, error)
+
+	// Crash monitoring
+	GetCrashLogs() []string
+
+	// Network monitoring
+	NetworkMonitor() *NetworkMonitor
+
+	// Dialog management
+	GetDialogManager() *DialogManager
+
+	// Console and error logs
+	GetConsoleLogs(tabID string, limit int) []LogEntry
+	ClearConsoleLogs(tabID string)
+	GetErrorLogs(tabID string, limit int) []ErrorEntry
+	ClearErrorLogs(tabID string)
 }
 
-type LockInfo struct {
-	Owner     string
-	ExpiresAt time.Time
-}
+type LockInfo = bridgetabs.LockInfo
 
 // ProfileService abstracts profile management operations.
 type ProfileService interface {
@@ -54,7 +75,7 @@ type ProfileService interface {
 // OrchestratorService abstracts instance orchestration operations.
 type OrchestratorService interface {
 	RegisterHandlers(mux *http.ServeMux)
-	Launch(name, port string, headless bool) (*Instance, error)
+	Launch(name, port string, headless bool, extensionPaths []string) (*Instance, error)
 	Stop(id string) error
 	StopProfile(name string) error
 	List() []Instance
@@ -107,18 +128,22 @@ type AnalyticsReport struct {
 }
 
 type Instance struct {
-	ID          string    `json:"id"`              // Hash-based ID: inst_XXXXXXXX
-	ProfileID   string    `json:"profileId"`       // Hash-based profile ID: prof_XXXXXXXX
-	ProfileName string    `json:"profileName"`     // Human-readable profile name (for display only)
-	Port        string    `json:"port"`            // Internal: instance port
-	Headless    bool      `json:"headless"`        // Mode: headless vs headed
-	Status      string    `json:"status"`          // Status: starting/running/stopping/stopped/error
-	StartTime   time.Time `json:"startTime"`       // When instance was created
-	Error       string    `json:"error,omitempty"` // Error message if status=error
+	ID          string    `json:"id"`                   // Hash-based ID: inst_XXXXXXXX
+	ProfileID   string    `json:"profileId"`            // Hash-based profile ID: prof_XXXXXXXX
+	ProfileName string    `json:"profileName"`          // Human-readable profile name (for display only)
+	Port        string    `json:"port"`                 // Internal: instance port
+	URL         string    `json:"url,omitempty"`        // Canonical base URL for bridge-backed instances
+	Headless    bool      `json:"headless"`             // Mode: headless vs headed
+	Status      string    `json:"status"`               // Status: starting/running/stopping/stopped/error
+	StartTime   time.Time `json:"startTime"`            // When instance was created
+	Error       string    `json:"error,omitempty"`      // Error message if status=error
+	Attached    bool      `json:"attached"`             // True if attached rather than locally launched
+	AttachType  string    `json:"attachType,omitempty"` // "cdp" or "bridge" for attached instances
+	CdpURL      string    `json:"cdpUrl,omitempty"`     // CDP WebSocket URL (for CDP-attached instances)
 }
 
 type InstanceTab struct {
-	ID         string `json:"id"`         // Hash-based tab ID: tab_XXXXXXXX
+	ID         string `json:"id"`         // Runtime tab ID (raw CDP target ID on this branch)
 	InstanceID string `json:"instanceId"` // Hash-based instance ID: inst_XXXXXXXX
 	URL        string `json:"url"`
 	Title      string `json:"title"`

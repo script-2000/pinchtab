@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +86,37 @@ func TestProfileManagerImport(t *testing.T) {
 	}
 }
 
+func TestProfileManagerImportNormalizesSourcePath(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProfileManager(dir)
+
+	srcRoot := t.TempDir()
+	src := filepath.Join(srcRoot, "chrome-src")
+	_ = os.MkdirAll(filepath.Join(src, "Default"), 0755)
+	_ = os.WriteFile(filepath.Join(src, "Default", "Preferences"), []byte(`{}`), 0644)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relSource, err := filepath.Rel(cwd, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := pm.Import("normalized-import", relSource); err != nil {
+		t.Fatal(err)
+	}
+
+	importMarker, err := os.ReadFile(filepath.Join(dir, profileID("normalized-import"), ".pinchtab-imported"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(importMarker), filepath.Clean(src); got != want {
+		t.Fatalf("expected normalized source %q, got %q", want, got)
+	}
+}
+
 func TestProfileManagerImportBadSource(t *testing.T) {
 	dir := t.TempDir()
 	pm := NewProfileManager(dir)
@@ -92,6 +124,69 @@ func TestProfileManagerImportBadSource(t *testing.T) {
 	err := pm.Import("bad", "/nonexistent/path")
 	if err == nil {
 		t.Fatal("expected error on bad source")
+	}
+}
+
+func TestProfileManagerImportRejectsSourceOutsideAllowedRoots(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProfileManager(dir)
+
+	var outside string
+	switch runtime.GOOS {
+	case "windows":
+		systemRoot := os.Getenv("SystemRoot")
+		if systemRoot == "" {
+			t.Skip("SystemRoot not set")
+		}
+		outside = systemRoot
+	default:
+		outside = string(os.PathSeparator) + "etc"
+	}
+
+	err := pm.Import("outside-root", outside)
+	if err == nil || !strings.Contains(err.Error(), "must be within") {
+		t.Fatalf("expected allowed root error, got %v", err)
+	}
+}
+
+func TestProfileManagerImportRejectsSymlinkSource(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProfileManager(dir)
+
+	src := filepath.Join(t.TempDir(), "chrome-src")
+	_ = os.MkdirAll(filepath.Join(src, "Default"), 0755)
+	_ = os.WriteFile(filepath.Join(src, "Default", "Preferences"), []byte(`{}`), 0644)
+
+	link := filepath.Join(t.TempDir(), "chrome-link")
+	if err := os.Symlink(src, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	err := pm.Import("bad-link", link)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink source import to fail, got %v", err)
+	}
+}
+
+func TestProfileManagerImportRejectsSymlinkEntry(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProfileManager(dir)
+
+	src := filepath.Join(t.TempDir(), "chrome-src")
+	_ = os.MkdirAll(filepath.Join(src, "Default"), 0755)
+	_ = os.WriteFile(filepath.Join(src, "Default", "Preferences"), []byte(`{}`), 0644)
+
+	target := filepath.Join(t.TempDir(), "outside-cookie.txt")
+	if err := os.WriteFile(target, []byte("secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(src, "Default", "link.txt")); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	err := pm.Import("bad-entry", src)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink entry import to fail, got %v", err)
 	}
 }
 
@@ -103,7 +198,7 @@ func TestProfileManagerListReadsAccountFromPreferences(t *testing.T) {
 	}
 
 	prefsPath := filepath.Join(dir, profileID("acc-pref"), "Default", "Preferences")
-	prefs := `{"account_info":[{"email":"alice@example.com","full_name":"Alice"}]}`
+	prefs := `{"account_info":[{"email":"alice@pinchtab.com","full_name":"Alice"}]}`
 	if err := os.WriteFile(prefsPath, []byte(prefs), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -115,8 +210,8 @@ func TestProfileManagerListReadsAccountFromPreferences(t *testing.T) {
 	if len(profiles) != 1 {
 		t.Fatalf("expected 1 profile, got %d", len(profiles))
 	}
-	if profiles[0].AccountEmail != "alice@example.com" {
-		t.Fatalf("expected account email alice@example.com, got %q", profiles[0].AccountEmail)
+	if profiles[0].AccountEmail != "alice@pinchtab.com" {
+		t.Fatalf("expected account email alice@pinchtab.com, got %q", profiles[0].AccountEmail)
 	}
 	if profiles[0].AccountName != "Alice" {
 		t.Fatalf("expected account name Alice, got %q", profiles[0].AccountName)
@@ -134,7 +229,7 @@ func TestProfileManagerListReadsLocalStateIdentity(t *testing.T) {
 	}
 
 	localStatePath := filepath.Join(dir, profileID("acc-local"), "Local State")
-	localState := `{"profile":{"info_cache":{"Default":{"name":"Work","user_name":"bob@example.com","gaia_name":"Bob","gaia_id":"123"}}}}`
+	localState := `{"profile":{"info_cache":{"Default":{"name":"Work","user_name":"bob@pinchtab.com","gaia_name":"Bob","gaia_id":"123"}}}}`
 	if err := os.WriteFile(localStatePath, []byte(localState), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -149,8 +244,8 @@ func TestProfileManagerListReadsLocalStateIdentity(t *testing.T) {
 	if profiles[0].ChromeProfileName != "Work" {
 		t.Fatalf("expected chrome profile name Work, got %q", profiles[0].ChromeProfileName)
 	}
-	if profiles[0].AccountEmail != "bob@example.com" {
-		t.Fatalf("expected account email bob@example.com, got %q", profiles[0].AccountEmail)
+	if profiles[0].AccountEmail != "bob@pinchtab.com" {
+		t.Fatalf("expected account email bob@pinchtab.com, got %q", profiles[0].AccountEmail)
 	}
 	if profiles[0].AccountName != "Bob" {
 		t.Fatalf("expected account name Bob, got %q", profiles[0].AccountName)
@@ -220,7 +315,7 @@ func TestActionTracker(t *testing.T) {
 			Timestamp:  time.Now().Add(time.Duration(i) * time.Second),
 			Method:     "GET",
 			Endpoint:   "/snapshot",
-			URL:        "https://example.com",
+			URL:        "https://pinchtab.com",
 			DurationMs: 100,
 			Status:     200,
 		})
@@ -296,10 +391,11 @@ func TestProfileHandlerCreate(t *testing.T) {
 func TestProfileHandlerReset(t *testing.T) {
 	pm := NewProfileManager(t.TempDir())
 	_ = pm.Create("resettable")
+	id := profileID("resettable")
 	mux := http.NewServeMux()
 	pm.RegisterHandlers(mux)
 
-	req := httptest.NewRequest("POST", "/profiles/resettable/reset", nil)
+	req := httptest.NewRequest("POST", "/profiles/"+id+"/reset", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -311,10 +407,11 @@ func TestProfileHandlerReset(t *testing.T) {
 func TestProfileHandlerDelete(t *testing.T) {
 	pm := NewProfileManager(t.TempDir())
 	_ = pm.Create("deletable")
+	id := profileID("deletable")
 	mux := http.NewServeMux()
 	pm.RegisterHandlers(mux)
 
-	req := httptest.NewRequest("DELETE", "/profiles/deletable", nil)
+	req := httptest.NewRequest("DELETE", "/profiles/"+id, nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -359,6 +456,77 @@ func TestProfileUpdateMeta(t *testing.T) {
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestProfileUpdateMetaRejectsInvalidProfileName(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/profiles/meta", strings.NewReader(`{"name":"poc';calc","description":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestProfileUpdateByIDCanClearMetadata(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	if err := pm.CreateWithMeta("clearable", ProfileMeta{
+		UseWhen:     "Used for work",
+		Description: "Has metadata",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"useWhen":"","description":""}`
+	req := httptest.NewRequest("PATCH", "/profiles/"+profileID("clearable"), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	profiles, err := pm.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].UseWhen != "" {
+		t.Errorf("expected empty useWhen after clear, got %q", profiles[0].UseWhen)
+	}
+	if profiles[0].Description != "" {
+		t.Errorf("expected empty description after clear, got %q", profiles[0].Description)
+	}
+}
+
+func TestProfileUpdateByIDRejectsInvalidRename(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	if err := pm.Create("renameable"); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/profiles/"+profileID("renameable"), strings.NewReader(`{"name":"poc';calc"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -421,6 +589,7 @@ func TestValidateProfileName(t *testing.T) {
 		{"valid with numbers", "profile123", false, ""},
 		{"valid with underscore", "my_profile", false, ""},
 		{"valid with dots", "my.profile", false, ""},
+		{"valid with spaces", "Work Profile", false, ""},
 		{"valid single char", "a", false, ""},
 
 		// Empty name
@@ -440,6 +609,18 @@ func TestValidateProfileName(t *testing.T) {
 		{"forward slash suffix", "test/", true, "cannot contain '/'"},
 		{"backslash", "test\\profile", true, "cannot contain '/'"},
 		{"backslash prefix", "\\test", true, "cannot contain '/'"},
+		{"single quote", "poc';calc", true, "contains invalid character"},
+		{"semicolon", "poc;calc", true, "contains invalid character"},
+		{"pipe", "poc|calc", true, "contains invalid character"},
+		{"dollar", "poc$calc", true, "contains invalid character"},
+		{"backtick", "poc`calc", true, "contains invalid character"},
+		{"colon", "poc:calc", true, "contains invalid character"},
+		{"trailing dot", "poc.", true, "cannot end with '.'"},
+		{"leading whitespace", " profile", true, "cannot start or end with whitespace"},
+		{"trailing whitespace", "profile ", true, "cannot start or end with whitespace"},
+		{"reserved device name", "CON", true, "reserved device name"},
+		{"reserved device name with extension", "con.txt", true, "reserved device name"},
+		{"reserved printer name", "LPT1", true, "reserved device name"},
 
 		// Combined attacks
 		{"traversal with slash", "../../../etc/passwd", true, "cannot contain"},
@@ -474,6 +655,10 @@ func TestProfileCreateRejectsPathTraversal(t *testing.T) {
 		"../../etc/passwd",
 		"test/subdir",
 		"/absolute",
+		"poc';calc",
+		"bad|name",
+		"CON",
+		"con.txt",
 	}
 
 	for _, name := range badNames {
@@ -499,6 +684,10 @@ func TestProfileHandlerCreateRejectsPathTraversal(t *testing.T) {
 		{"path traversal ..", `{"name":"../malicious"}`, 400},
 		{"path traversal /", `{"name":"test/nested"}`, 400},
 		{"path traversal backslash", `{"name":"test\\nested"}`, 400},
+		{"powershell metacharacter", `{"name":"poc';calc"}`, 400},
+		{"reserved device name", `{"name":"CON"}`, 400},
+		{"trailing dot", `{"name":"bad."}`, 400},
+		{"leading whitespace", `{"name":" bad"}`, 400},
 		{"empty name", `{"name":""}`, 400},
 		{"valid name", `{"name":"valid-profile"}`, 200},
 	}
@@ -515,6 +704,30 @@ func TestProfileHandlerCreateRejectsPathTraversal(t *testing.T) {
 					tt.body, w.Code, tt.wantStatus, w.Body.String())
 			}
 		})
+	}
+}
+
+func TestProfileHandlerImportRejectsInvalidProfileName(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	src := filepath.Join(t.TempDir(), "chrome-src")
+	if err := os.MkdirAll(filepath.Join(src, "Default"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "Default", "Preferences"), []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := fmt.Sprintf(`{"name":"poc';calc","sourcePath":%q}`, src)
+	req := httptest.NewRequest(http.MethodPost, "/profiles/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -604,5 +817,65 @@ func TestProfileDeleteRejectsPathTraversal(t *testing.T) {
 				t.Errorf("Delete(%q) should have returned error", name)
 			}
 		})
+	}
+}
+
+func TestProfileRename(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProfileManager(dir)
+
+	if err := pm.Create("old-name"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := pm.Rename("old-name", "new-name"); err != nil {
+		t.Fatalf("Rename failed: %v", err)
+	}
+
+	if pm.Exists("old-name") {
+		t.Error("old name should not exist after rename")
+	}
+	if !pm.Exists("new-name") {
+		t.Error("new name should exist after rename")
+	}
+
+	profiles, _ := pm.List()
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Name != "new-name" {
+		t.Errorf("expected name new-name, got %s", profiles[0].Name)
+	}
+	if profiles[0].ID != profileID("new-name") {
+		t.Errorf("expected ID %s, got %s", profileID("new-name"), profiles[0].ID)
+	}
+}
+
+func TestProfileRenameRejectsPathTraversal(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	_ = pm.Create("legit")
+
+	badNames := []string{"../evil", "evil/../other", "..\\windows"}
+	for _, name := range badNames {
+		t.Run("to_"+name, func(t *testing.T) {
+			err := pm.Rename("legit", name)
+			if err == nil {
+				t.Errorf("Rename to %q should have returned error", name)
+			}
+		})
+	}
+}
+
+func TestProfileRenameRejectsDuplicate(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	_ = pm.Create("profile-a")
+	_ = pm.Create("profile-b")
+
+	err := pm.Rename("profile-a", "profile-b")
+	if err == nil {
+		t.Error("Rename to existing name should fail")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("expected 'already exists' error, got: %v", err)
 	}
 }

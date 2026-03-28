@@ -1,513 +1,158 @@
-# Phase 6: End-to-End Testing Guide
+# Testing
 
-This guide provides manual and automated tests for the complete multi-instance architecture.
+## Quick Start with dev
 
-## Test Organization
-
-- **Automated Integration Tests**: `tests/integration/orchestrator_test.go` (Go)
-  - Instance creation and lifecycle
-  - Hash-based ID generation
-  - Port allocation and reuse
-  - Instance isolation
-  - Orchestrator proxy routing
-  - Run with: `go test -tags integration ./tests/integration -run Orchestrator -timeout 120s`
-
-- **Manual Tests**: `tests/manual/orchestrator.md`
-  - Visual verification (headed/headless windows)
-  - Real-time monitoring (memory, CPU)
-  - Port management verification
-  - Chrome initialization verification
-  - Dashboard UI testing
-  - Error conditions and edge cases
-  - Integration with existing features
-
-- **Quick Validation**: Follow the step-by-step tests below for immediate feedback
-
-## Prerequisites
-
-- Pinchtab built: `go build -o pinchtab ./cmd/pinchtab`
-- Port range available: 9867-9968
-- Chrome/Chromium installed
-
-## Quick Start Test (Manual)
-
-### 1. Start Pinchtab Dashboard
+The `dev` developer toolkit is the easiest way to run checks and tests:
 
 ```bash
-./pinchtab
+./dev                    # Interactive picker
+./dev test               # All tests (unit + E2E)
+./dev test unit          # Unit tests only
+./dev e2e                # Release suite (api-full + cli-full)
+./dev e2e pr             # PR suite (api-fast + cli-fast)
+./dev e2e api-fast       # API fast, single-instance
+./dev e2e cli-fast       # CLI fast, single-instance
+./dev e2e api-full       # API full, multi-instance
+./dev e2e cli-full       # CLI full, single-instance
+./dev e2e full-api auth  # Full API suite filtered to scenario filenames containing "auth"
+
+/bin/bash tests/e2e/run.sh api
+/bin/bash tests/e2e/run.sh api all=true
+/bin/bash tests/e2e/run.sh api all=true filter=auth
+/bin/bash tests/e2e/run.sh cli
+/bin/bash tests/e2e/run.sh cli all=true
+./dev check              # All checks (format, vet, build, lint)
+./dev check go           # Go checks only
+./dev check security     # Gosec security scan
+./dev format dashboard   # Run Prettier on dashboard sources
+./dev doctor             # Setup dev environment
 ```
 
-This starts:
-- Dashboard on port 9867
-- Ready to accept instance creation requests
+E2E summaries and markdown reports prefix each test with its scenario filename, for example `[auth-full] auth: login sets session cookie`, so it is easy to see which filename filter to use.
 
-Expected output:
-```
-INFO dashboard listening addr=127.0.0.1:9867
-INFO port allocator initialized start=9868 end=9968
-```
-
-### 2. Create First Instance (Headed)
+## Unit Tests
 
 ```bash
-curl -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name":"work",
-    "headless":false
-  }'
+go test ./...
+# or
+./dev test unit
 ```
 
-**Expected response:**
-```json
-{
-  "id": "inst_XXXXXXXX",
-  "profileId": "prof_YYYYYYYY",
-  "profileName": "work",
-  "port": "9868",
-  "headless": false,
-  "status": "starting",
-  "startTime": "2026-02-28T20:15:00Z"
-}
-```
+Unit tests are standard Go tests that validate individual packages and functions without launching a full server.
 
-**Verify:**
-- Hash-based instance ID (inst_XXXXXXXX format) ✓
-- Hash-based profile ID (prof_XXXXXXXX format) ✓
-- Port auto-allocated (9868) ✓
-- Status is "starting" (not "running" yet) ✓
-- **Within 2 seconds**: Chrome window should open on your screen ✓
+## E2E Tests
 
-### 3. Create Second Instance (Headless)
+End-to-end tests launch a real pinchtab server with Chrome and run e2e-level tests against it.
+
+### PR Suites
 
 ```bash
-curl -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name":"scrape",
-    "headless":true
-  }'
+./dev e2e pr
+./dev e2e api-fast
+./dev e2e cli-fast
 ```
 
-**Expected response:**
-```json
-{
-  "id": "inst_ZZZZZZZZ",
-  "profileId": "prof_WWWWWWWW",
-  "profileName": "scrape",
-  "port": "9869",
-  "headless": true,
-  "status": "starting",
-  "startTime": "2026-02-28T20:15:05Z"
-}
-```
+Use these on pull requests and during normal development:
 
-**Verify:**
-- Different instance ID ✓
-- Different port (9869) ✓
-- Same port range used (auto-allocation) ✓
-- No Chrome window (headless=true) ✓
+- `pr` runs the same E2E suite composition as the PR workflow
+- `api-fast` runs the API `*-basic.sh` groups on the single-instance stack
+- `cli-fast` runs the CLI `*-basic.sh` groups on the single-instance stack
 
-### 4. List All Instances
+### Full API Suite
 
 ```bash
-curl http://localhost:9867/instances
+./dev e2e api-full
 ```
 
-**Expected response:**
-```json
-[
-  {
-    "id": "inst_XXXXXXXX",
-    "profileId": "prof_YYYYYYYY",
-    "profileName": "work",
-    "port": "9868",
-    "headless": false,
-    "status": "running",
-    "startTime": "2026-02-28T20:15:00Z"
-  },
-  {
-    "id": "inst_ZZZZZZZZ",
-    "profileId": "prof_WWWWWWWW",
-    "profileName": "scrape",
-    "port": "9869",
-    "headless": true,
-    "status": "running",
-    "startTime": "2026-02-28T20:15:05Z"
-  }
-]
-```
+Runs the grouped API `basic` and `full` scenarios on the multi-instance stack. `api-fast` is the `basic` layer only on the single-instance stack; `api-full` adds the extra and edge-case groups plus the multi-instance-only coverage.
 
-**Verify:**
-- Both instances listed ✓
-- Both have "running" status ✓
-- Hash-based IDs on both ✓
-
-### 5. Navigate Instance 1 (via Orchestrator Proxy)
+### Full CLI Suite
 
 ```bash
-curl -X POST http://localhost:9867/instances/inst_XXXXXXXX/navigate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://example.com"
-  }'
+./dev e2e cli-full
 ```
 
-Replace `inst_XXXXXXXX` with actual ID from step 2.
+Runs the grouped CLI `basic` and `full` scenarios on the single-instance stack. `cli-fast` is the `basic` layer only; `cli-full` adds the extra and edge-case groups.
 
-**Expected response:**
-```json
-{
-  "tabId": "tab_MMMMMMMM",
-  "url": "https://example.com",
-  "title": "Example Domain"
-}
-```
-
-**Verify:**
-- Hash-based tab ID (tab_MMMMMMMM format) ✓
-- Instance 1 Chrome window navigates to example.com ✓
-- URL matches ✓
-
-### 6. Navigate Instance 2 (via Orchestrator Proxy)
+### Release Meta-Suite
 
 ```bash
-curl -X POST http://localhost:9867/instances/inst_ZZZZZZZZ/navigate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://github.com"
-  }'
+./dev e2e
 ```
 
-Replace `inst_ZZZZZZZZ` with actual ID from step 3.
+Runs `api-full` and `cli-full` in sequence.
 
-**Expected response:**
-```json
-{
-  "tabId": "tab_NNNNNNNN",
-  "url": "https://github.com",
-  "title": "GitHub"
-}
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `CI` | _(unset)_ | Set to `true` for longer health check timeouts (60s vs 30s) |
+
+### Temp Directory Layout
+
+Each E2E test run creates a single temp directory under `/tmp/pinchtab-test-*/`:
+
+```
+/tmp/pinchtab-test-123456789/
+├── pinchtab          # Compiled test binary
+├── state/            # Dashboard state (profiles, instances)
+└── profiles/         # Chrome user-data directories
 ```
 
-**Verify:**
-- Different tab ID (tab_NNNNNNNN vs tab_MMMMMMMM) ✓
-- Instance 2 (headless) navigates silently ✓
-- Instance 1 window still shows example.com (not affected) ✓
+Everything is cleaned up automatically when tests finish.
 
-### 7. Get Snapshot from Instance 1
+## Test File Structure
 
-```bash
-curl "http://localhost:9867/instances/inst_XXXXXXXX/snapshot" \
-  -o snapshot.json
-cat snapshot.json | jq '.url'
-```
+E2E tests are organized by surface and feature group:
 
-**Expected:**
-- Returns full page snapshot of example.com
-- Shows isolation: only sees inst_XXXXXXXX's content ✓
+- **`tests/e2e/scenarios-api/*.sh`** — grouped API entrypoints such as `tabs-basic.sh` and `tabs-full.sh`
+  - `*-basic.sh` is the PR-fast happy-path layer
+  - `*-full.sh` adds the extra and edge-case coverage for the same feature
+  - Use Docker Compose: `tests/e2e/docker-compose.yml` for `api-fast`, `tests/e2e/docker-compose-multi.yml` for `api-full`
 
-### 8. Stop Instance 1
+- **`tests/e2e/scenarios-cli/*.sh`** — grouped CLI entrypoints such as `tabs-basic.sh` and `tabs-full.sh`
+  - Follows the same `basic` vs `full` split as the API side
+  - Use Docker Compose: `tests/e2e/docker-compose.yml` for both `cli-fast` and `cli-full`
 
-```bash
-curl -X POST http://localhost:9867/instances/inst_XXXXXXXX/stop
-```
+## E2E Results
 
-**Expected response:**
-```json
-{
-  "status": "stopped",
-  "id": "inst_XXXXXXXX"
-}
-```
+Each suite writes its own summary and markdown report under `tests/e2e/results/`:
 
-**Verify:**
-- Chrome window closes ✓
-- Instance 2 still running (headless, invisible) ✓
-- Port 9868 released back to allocator ✓
+- `summary-api-fast.txt` / `report-api-fast.md`
+- `summary-api-full.txt` / `report-api-full.md`
+- `summary-cli-fast.txt` / `report-cli-fast.md`
+- `summary-cli-full.txt` / `report-cli-full.md`
 
-### 9. Create Third Instance (Reuses Released Port)
+The runner clears the target suite files before each run so stale results do not survive into the next suite.
 
-```bash
-curl -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name":"test",
-    "headless":true
-  }'
-```
+## Writing New E2E Tests
 
-**Expected:**
-- New instance gets port 9868 (reused from step 8) ✓
-- New instance ID generated ✓
+Add new coverage directly to a grouped entrypoint in `tests/e2e/scenarios-api/` or `tests/e2e/scenarios-cli/`. Keep `*-basic.sh` focused on the happy path and put the extra and edge-case coverage in the matching `*-full.sh`.
 
-### 10. Stop All Instances
-
-```bash
-curl -X POST http://localhost:9867/instances/inst_ZZZZZZZZ/stop
-curl -X POST http://localhost:9867/instances/inst_TTTTTTTT/stop
-```
-
-**Verify:**
-- All instances stopped ✓
-- All ports released back to allocator ✓
-- Dashboard still running on 9867 ✓
-
----
-
-## Automated Test Script
+### Example: Grouped API Entrypoint
 
 ```bash
 #!/bin/bash
 
-# Start Pinchtab in background
-./pinchtab &
-DASHBOARD_PID=$!
-sleep 2
+# tests/e2e/scenarios-api/tabs-basic.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../helpers/api.sh"
 
-echo "✓ Dashboard started (PID: $DASHBOARD_PID)"
+start_test "tab-scoped snapshot"
+# ...
 
-# Create instance 1
-INST1=$(curl -s -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{"name":"work","headless":false}')
-INST1_ID=$(echo $INST1 | jq -r '.id')
-echo "✓ Created instance 1: $INST1_ID"
-
-# Create instance 2
-INST2=$(curl -s -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{"name":"scrape","headless":true}')
-INST2_ID=$(echo $INST2 | jq -r '.id')
-echo "✓ Created instance 2: $INST2_ID"
-
-# Wait for Chrome to initialize
-sleep 3
-
-# List instances
-INSTANCES=$(curl -s http://localhost:9867/instances | jq '.[] | .id')
-echo "✓ Running instances: $(echo $INSTANCES | tr '\n' ' ')"
-
-# Navigate instance 1
-NAV1=$(curl -s -X POST "http://localhost:9867/instances/$INST1_ID/navigate" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com"}')
-TAB1_ID=$(echo $NAV1 | jq -r '.tabId')
-echo "✓ Navigated instance 1, tab: $TAB1_ID"
-
-# Navigate instance 2
-NAV2=$(curl -s -X POST "http://localhost:9867/instances/$INST2_ID/navigate" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://github.com"}')
-TAB2_ID=$(echo $NAV2 | jq -r '.tabId')
-echo "✓ Navigated instance 2, tab: $TAB2_ID"
-
-# Verify isolation: different tab IDs
-if [ "$TAB1_ID" != "$TAB2_ID" ]; then
-  echo "✓ Tab isolation verified (different IDs)"
-else
-  echo "✗ FAILED: Tab IDs should be different!"
-  exit 1
-fi
-
-# Stop instance 1
-curl -s -X POST "http://localhost:9867/instances/$INST1_ID/stop" > /dev/null
-echo "✓ Stopped instance 1"
-
-# Stop instance 2
-curl -s -X POST "http://localhost:9867/instances/$INST2_ID/stop" > /dev/null
-echo "✓ Stopped instance 2"
-
-# Verify all stopped
-REMAINING=$(curl -s http://localhost:9867/instances | jq '.[] | .id' | wc -l)
-if [ "$REMAINING" -eq 0 ]; then
-  echo "✓ All instances cleaned up"
-else
-  echo "✗ FAILED: $REMAINING instances still running!"
-  exit 1
-fi
-
-# Clean up
-kill $DASHBOARD_PID 2>/dev/null
-echo ""
-echo "✅ ALL TESTS PASSED!"
+start_test "tab focus"
+# ...
+end_test
 ```
 
-Save as `test-e2e.sh`, then run:
-```bash
-chmod +x test-e2e.sh
-./test-e2e.sh
-```
+## Coverage
 
----
-
-## Stress Test (10 Instances)
+Generate coverage for unit tests:
 
 ```bash
-#!/bin/bash
-
-./pinchtab &
-DASHBOARD_PID=$!
-sleep 2
-
-echo "Creating 10 instances..."
-INSTANCES=()
-
-for i in {1..10}; do
-  INST=$(curl -s -X POST http://localhost:9867/instances/launch \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"stress-$i\",\"headless\":true}")
-  ID=$(echo $INST | jq -r '.id')
-  INSTANCES+=($ID)
-  PORT=$(echo $INST | jq -r '.port')
-  echo "  $i. $ID (port: $PORT)"
-done
-
-sleep 3
-echo ""
-echo "Navigating all instances concurrently..."
-
-for ID in "${INSTANCES[@]}"; do
-  curl -s -X POST "http://localhost:9867/instances/$ID/navigate" \
-    -H "Content-Type: application/json" \
-    -d '{"url":"https://example.com"}' &
-done
-
-wait
-echo "✓ All navigations completed"
-
-echo ""
-echo "Stopping all instances..."
-for ID in "${INSTANCES[@]}"; do
-  curl -s -X POST "http://localhost:9867/instances/$ID/stop" > /dev/null &
-done
-
-wait
-echo "✓ All instances stopped"
-
-kill $DASHBOARD_PID 2>/dev/null
-echo "✅ STRESS TEST PASSED!"
+go test ./... -coverprofile=coverage.out
+go tool cover -html=coverage.out
 ```
 
----
-
-## Multi-Agent Test
-
-Test with agents targeting different instances:
-
-```bash
-#!/bin/bash
-
-./pinchtab &
-sleep 2
-
-# Create 3 instances for 3 agents
-AGENT_A=$(curl -s -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{"name":"agent-a","headless":true}' | jq -r '.id')
-
-AGENT_B=$(curl -s -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{"name":"agent-b","headless":true}' | jq -r '.id')
-
-AGENT_C=$(curl -s -X POST http://localhost:9867/instances/launch \
-  -H "Content-Type: application/json" \
-  -d '{"name":"agent-c","headless":true}' | jq -r '.id')
-
-sleep 2
-
-# Agent A: navigate to site 1
-curl -X POST "http://localhost:9867/instances/$AGENT_A/navigate" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com"}' &
-
-# Agent B: navigate to site 2
-curl -X POST "http://localhost:9867/instances/$AGENT_B/navigate" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://github.com"}' &
-
-# Agent C: navigate to site 3
-curl -X POST "http://localhost:9867/instances/$AGENT_C/navigate" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://rust-lang.org"}' &
-
-wait
-
-echo "✓ All agents navigated independently"
-echo "✓ Each has isolated cookies/history"
-echo "✓ No state leakage between agents"
-
-# Cleanup
-curl -s -X POST "http://localhost:9867/instances/$AGENT_A/stop" > /dev/null
-curl -s -X POST "http://localhost:9867/instances/$AGENT_B/stop" > /dev/null
-curl -s -X POST "http://localhost:9867/instances/$AGENT_C/stop" > /dev/null
-
-echo "✅ MULTI-AGENT TEST PASSED!"
-```
-
----
-
-## Test Checklist
-
-- [ ] Hash-based IDs work (prof_X, inst_X, tab_X formats)
-- [ ] Auto-port allocation works (9868, 9869, 9870, ...)
-- [ ] Port release and reuse works
-- [ ] Headed instance opens Chrome window
-- [ ] Headless instance runs silently
-- [ ] Orchestrator proxy routes work
-- [ ] Instance isolation (no state leakage)
-- [ ] Multi-instance concurrent navigation works
-- [ ] Health checks pass on all instances
-- [ ] Cleanup on shutdown works
-- [ ] 10-instance stress test passes
-- [ ] Multi-agent isolation verified
-
----
-
-## Debugging Tips
-
-### Check Dashboard Logs
-
-```bash
-# Follow logs while running tests
-./pinchtab 2>&1 | grep -E "instance|chrome|port"
-```
-
-### Check Instance Port
-
-```bash
-# See which ports are in use
-lsof -i :9868
-lsof -i :9869
-```
-
-### Check Instance Health
-
-```bash
-curl http://localhost:9868/health
-curl http://localhost:9869/health
-```
-
-### Manual Chrome Kill (if needed)
-
-```bash
-# Kill all Pinchtab-managed Chrome processes
-pkill -f "Chrome.*user-data-dir.*\.pinchtab"
-```
-
----
-
-## Expected Results
-
-After running all tests, you should see:
-- ✅ 10+ instances created and destroyed without issues
-- ✅ Hash-based IDs consistent and validated
-- ✅ Ports auto-allocated and released properly
-- ✅ Headed windows open and close correctly
-- ✅ No Chrome orphan processes
-- ✅ Complete isolation between instances
-- ✅ Multi-agent concurrent access works flawlessly
-
----
-
-**Ready to test?** Run `./pinchtab` and follow the Quick Start Test above!
+Note: E2E tests are black-box tests and don't contribute to code coverage metrics directly.
