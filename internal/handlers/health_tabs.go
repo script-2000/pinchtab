@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/chromedp/cdproto/target"
 	"github.com/pinchtab/pinchtab/internal/bridge"
 	"github.com/pinchtab/pinchtab/internal/engine"
 	"github.com/pinchtab/pinchtab/internal/httpx"
@@ -122,11 +123,16 @@ func (h *Handlers) HandleTabs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	currentTabID := ""
+	if _, resolvedID, err := h.Bridge.TabContext(""); err == nil {
+		currentTabID = resolvedID
+	}
+
 	tabs := make([]map[string]any, 0, len(targets))
-	for _, t := range targets {
+	appendTab := func(t *target.Info) {
 		// Skip the initial about:blank tab that Chrome creates on launch
 		if bridge.IsTransientURL(t.URL) {
-			continue
+			return
 		}
 		tabID := string(t.TargetID)
 		entry := map[string]any{
@@ -140,6 +146,20 @@ func (h *Handlers) HandleTabs(w http.ResponseWriter, r *http.Request) {
 			entry["lockedUntil"] = lock.ExpiresAt.Format(time.RFC3339)
 		}
 		tabs = append(tabs, entry)
+	}
+
+	// First pass: add the current focused tab
+	for _, t := range targets {
+		if string(t.TargetID) == currentTabID {
+			appendTab(t)
+		}
+	}
+	// Second pass: add all other tabs
+	for _, t := range targets {
+		if string(t.TargetID) == currentTabID {
+			continue
+		}
+		appendTab(t)
 	}
 	httpx.JSON(w, 200, map[string]any{"tabs": tabs})
 }

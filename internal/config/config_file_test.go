@@ -13,6 +13,9 @@ func TestDefaultFileConfig(t *testing.T) {
 	if fc.Server.Bind != "127.0.0.1" {
 		t.Errorf("DefaultFileConfig.Server.Bind = %v, want 127.0.0.1", fc.Server.Bind)
 	}
+	if fc.Server.CookieSecure != nil {
+		t.Errorf("DefaultFileConfig.Server.CookieSecure = %v, want nil for auto-detect", formatBoolPtr(fc.Server.CookieSecure))
+	}
 	if fc.InstanceDefaults.Mode != "headless" {
 		t.Errorf("DefaultFileConfig.InstanceDefaults.Mode = %v, want headless", fc.InstanceDefaults.Mode)
 	}
@@ -235,6 +238,9 @@ func TestDefaultFileConfigJSON(t *testing.T) {
 	if !parsed.Security.IDPI.WrapContent {
 		t.Errorf("round-trip Security.IDPI.WrapContent = %v, want true", parsed.Security.IDPI.WrapContent)
 	}
+	if parsed.Security.IDPI.ShieldThreshold != 0 {
+		t.Errorf("round-trip Security.IDPI.ShieldThreshold = %d, want 0", parsed.Security.IDPI.ShieldThreshold)
+	}
 }
 
 func TestFileConfigJSONPreservesExplicitZeroValues(t *testing.T) {
@@ -245,6 +251,7 @@ func TestFileConfigJSONPreservesExplicitZeroValues(t *testing.T) {
 	fc.Security.IDPI.StrictMode = false
 	fc.Security.IDPI.AllowedDomains = []string{}
 	fc.Security.IDPI.CustomPatterns = []string{}
+	fc.Security.IDPI.ShieldThreshold = 30
 
 	data, err := json.Marshal(fc)
 	if err != nil {
@@ -277,6 +284,9 @@ func TestFileConfigJSONPreservesExplicitZeroValues(t *testing.T) {
 		t.Fatal("security.idpi.allowedDomains missing from JSON")
 	} else if items, ok := allowedDomains.([]any); !ok || len(items) != 0 {
 		t.Fatalf("security.idpi.allowedDomains = %#v, want explicit empty list", allowedDomains)
+	}
+	if raw, ok := idpi["shieldThreshold"]; !ok || int(raw.(float64)) != 30 {
+		t.Fatalf("security.idpi.shieldThreshold = %#v, want 30", raw)
 	}
 	if downloadAllowedDomains, ok := security["downloadAllowedDomains"]; !ok {
 		t.Fatal("security.downloadAllowedDomains missing from JSON")

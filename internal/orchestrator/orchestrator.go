@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -264,13 +265,16 @@ func (o *Orchestrator) Launch(name, port string, headless bool, extensionPaths [
 		o.mu.Lock()
 	} else {
 		o.mu.Unlock()
-		if portInt, err := strconv.Atoi(port); err == nil {
-			if err := o.portAllocator.ReservePort(portInt); err != nil {
-				return nil, fmt.Errorf("failed to reserve port %s: %w", port, err)
-			}
-			if portInt >= o.portAllocator.start && portInt <= o.portAllocator.end {
-				reservedPorts = append(reservedPorts, portInt)
-			}
+		portInt, err := parsePortNumber(port)
+		if err != nil {
+			return nil, err
+		}
+		port = strconv.Itoa(portInt)
+		if err := o.portAllocator.ReservePort(portInt); err != nil {
+			return nil, fmt.Errorf("failed to reserve port %s: %w", port, err)
+		}
+		if portInt >= o.portAllocator.start && portInt <= o.portAllocator.end {
+			reservedPorts = append(reservedPorts, portInt)
 		}
 		o.mu.Lock()
 	}
@@ -378,8 +382,6 @@ func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, i
 	} else {
 		fc.InstanceDefaults.Mode = "headed"
 	}
-	noRestore := true
-	fc.InstanceDefaults.NoRestore = &noRestore
 
 	if len(extensionPaths) > 0 {
 		seen := make(map[string]bool)
@@ -418,12 +420,31 @@ func intPtr(v int) *int {
 	return &n
 }
 
-func (o *Orchestrator) attachExternalInstance(name string, inst bridge.Instance, authToken string) (*bridge.Instance, error) {
+// attachExternalInstance registers an external instance or updates an existing
+// bridge in place (upsert). Non-bridge duplicates still return an error.
+func (o *Orchestrator) attachExternalInstance(name string, inst bridge.Instance, authToken string) (*bridge.Instance, bool, error) {
 	o.mu.Lock()
-	for _, inst := range o.instances {
-		if inst.ProfileName == name && instanceIsActive(inst) {
+	for _, existing := range o.instances {
+		if existing.ProfileName == name && instanceIsActive(existing) {
+			if existing.Attached && inst.AttachType == "bridge" && existing.AttachType == "bridge" {
+				if existing.authToken != "" && subtle.ConstantTimeCompare([]byte(existing.authToken), []byte(authToken)) != 1 {
+					o.mu.Unlock()
+					return nil, false, fmt.Errorf("bridge %q already attached: token mismatch", name)
+				}
+				existing.URL = inst.URL
+				existing.Instance.URL = inst.URL
+				existing.authToken = authToken
+				existing.Status = "running"
+				existing.Error = ""
+				existing.StartTime = time.Now()
+				result := existing.Instance
+				o.mu.Unlock()
+
+				o.syncInstanceToManager(&result)
+				return &result, false, nil
+			}
 			o.mu.Unlock()
-			return nil, fmt.Errorf("instance with name %q already exists", name)
+			return nil, false, fmt.Errorf("instance with name %q already exists", name)
 		}
 	}
 	o.mu.Unlock()
@@ -446,14 +467,14 @@ func (o *Orchestrator) attachExternalInstance(name string, inst bridge.Instance,
 	o.mu.Unlock()
 
 	o.syncInstanceToManager(&internal.Instance)
-	return &internal.Instance, nil
+	return &internal.Instance, true, nil
 }
 
 // Attach connects to an externally managed Chrome instance via CDP URL.
 // Unlike Launch, this does not start a Chrome process - it only registers
 // the external instance for tracking and proxying.
 func (o *Orchestrator) Attach(name, cdpURL string) (*bridge.Instance, error) {
-	inst, err := o.attachExternalInstance(name, bridge.Instance{
+	inst, _, err := o.attachExternalInstance(name, bridge.Instance{
 		Attached:   true,
 		AttachType: "cdp",
 		CdpURL:     cdpURL,
@@ -471,30 +492,34 @@ func (o *Orchestrator) Attach(name, cdpURL string) (*bridge.Instance, error) {
 }
 
 // AttachBridge registers an already-running bridge server as an attached instance.
-func (o *Orchestrator) AttachBridge(name, baseURL, token string) (*bridge.Instance, error) {
+// If a bridge with the same name is already attached, it is updated in place (upsert)
+// provided the caller presents the current bridge token.
+func (o *Orchestrator) AttachBridge(name, baseURL, token string) (*bridge.Instance, bool, error) {
 	normalizedBaseURL := strings.TrimRight(baseURL, "/")
 	if parsed, err := url.Parse(normalizedBaseURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
 		normalizedBaseURL = parsed.Scheme + "://" + parsed.Host
 	}
 
-	inst, err := o.attachExternalInstance(name, bridge.Instance{
+	inst, created, err := o.attachExternalInstance(name, bridge.Instance{
 		Attached:   true,
 		AttachType: "bridge",
 		URL:        normalizedBaseURL,
 	}, token)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	slog.Info("attached to external bridge", "id", inst.ID, "name", name, "url", internalurls.RedactForLog(inst.URL))
 	o.emitEvent("instance.attached", inst)
-	o.mu.RLock()
-	internal := o.instances[inst.ID]
-	o.mu.RUnlock()
-	if internal != nil {
-		go o.monitorAttachedBridge(internal)
+	if created {
+		o.mu.RLock()
+		internal := o.instances[inst.ID]
+		o.mu.RUnlock()
+		if internal != nil {
+			go o.monitorAttachedBridge(internal)
+		}
 	}
-	return inst, nil
+	return inst, created, nil
 }
 
 func (o *Orchestrator) Stop(id string) error {

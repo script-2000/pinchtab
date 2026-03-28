@@ -13,6 +13,7 @@ import (
 	"github.com/pinchtab/pinchtab/internal/bridge"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/engine"
+	"github.com/pinchtab/pinchtab/internal/stealth"
 )
 
 // TestHandleHealth_NilBridge verifies health endpoint returns 503 when bridge is nil
@@ -173,6 +174,47 @@ func TestHandleTabs_Success(t *testing.T) {
 	}
 }
 
+func TestHandleTabs_CurrentTrackedTabIsReturnedFirst(t *testing.T) {
+	mockBridge := &MockBridge{
+		targets: []*target.Info{
+			{TargetID: "tab1", URL: "https://pinchtab.com", Title: "Example", Type: "page"},
+			{TargetID: "tab2", URL: "https://google.com", Title: "Google", Type: "page"},
+			{TargetID: "tab3", URL: "https://example.com", Title: "Example 2", Type: "page"},
+		},
+		currentTabID: "tab2",
+	}
+
+	h := &Handlers{
+		Bridge: mockBridge,
+		Config: &config.RuntimeConfig{},
+	}
+
+	req := httptest.NewRequest("GET", "/tabs", nil)
+	w := httptest.NewRecorder()
+
+	h.HandleTabs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Tabs []struct {
+			ID string `json:"id"`
+		} `json:"tabs"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if len(resp.Tabs) != 3 {
+		t.Fatalf("expected 3 tabs, got %d", len(resp.Tabs))
+	}
+	if resp.Tabs[0].ID != "tab2" {
+		t.Fatalf("expected current tracked tab first, got %q", resp.Tabs[0].ID)
+	}
+}
+
 // TestHandleHealth_EnsureChromeFailure verifies /health returns 503 when Chrome initialization fails
 func TestHandleHealth_EnsureChromeFailure(t *testing.T) {
 	mockBridge := &MockBridge{
@@ -309,6 +351,7 @@ type MockBridge struct {
 	listTargetsErr     string
 	ensureChromeCalled bool
 	ensureChromeErr    string
+	currentTabID       string
 }
 
 func (m *MockBridge) ListTargets() ([]*target.Info, error) {
@@ -323,6 +366,9 @@ func (m *MockBridge) BrowserContext() context.Context {
 }
 
 func (m *MockBridge) TabContext(tabID string) (context.Context, string, error) {
+	if tabID == "" && m.currentTabID != "" {
+		return context.Background(), m.currentTabID, nil
+	}
 	return context.Background(), tabID, nil
 }
 
@@ -374,6 +420,17 @@ func (m *MockBridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 		return fmt.Errorf("%s", m.ensureChromeErr)
 	}
 	return nil
+}
+
+func (m *MockBridge) StealthStatus() *stealth.Status {
+	return &stealth.Status{
+		Level:         stealth.LevelLight,
+		LaunchMode:    stealth.LaunchModeUninitialized,
+		WebdriverMode: stealth.WebdriverModeNativeBaseline,
+		Flags:         map[string]bool{},
+		Capabilities:  map[string]bool{},
+		TabOverrides:  map[string]bool{"fingerprintRotateActive": false},
+	}
 }
 
 func (m *MockBridge) GetMemoryMetrics(tabID string) (*bridge.MemoryMetrics, error) {

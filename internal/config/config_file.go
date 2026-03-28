@@ -132,6 +132,7 @@ type serverConfigJSON struct {
 	Engine            string `json:"engine"`
 	NetworkBufferSize *int   `json:"networkBufferSize,omitempty"`
 	TrustProxyHeaders *bool  `json:"trustProxyHeaders,omitempty"`
+	CookieSecure      *bool  `json:"cookieSecure,omitempty"`
 }
 
 type browserConfigJSON struct {
@@ -188,13 +189,14 @@ type attachJSON struct {
 }
 
 type idpiConfigJSON struct {
-	Enabled        bool     `json:"enabled"`
-	AllowedDomains []string `json:"allowedDomains"`
-	StrictMode     bool     `json:"strictMode"`
-	ScanContent    bool     `json:"scanContent"`
-	WrapContent    bool     `json:"wrapContent"`
-	CustomPatterns []string `json:"customPatterns"`
-	ScanTimeoutSec int      `json:"scanTimeoutSec"`
+	Enabled         bool     `json:"enabled"`
+	AllowedDomains  []string `json:"allowedDomains"`
+	StrictMode      bool     `json:"strictMode"`
+	ScanContent     bool     `json:"scanContent"`
+	WrapContent     bool     `json:"wrapContent"`
+	CustomPatterns  []string `json:"customPatterns"`
+	ScanTimeoutSec  int      `json:"scanTimeoutSec"`
+	ShieldThreshold int      `json:"shieldThreshold"`
 }
 
 type multiInstanceConfigJSON struct {
@@ -261,6 +263,7 @@ func (fc FileConfig) MarshalJSON() ([]byte, error) {
 			Engine:            fc.Server.Engine,
 			NetworkBufferSize: fc.Server.NetworkBufferSize,
 			TrustProxyHeaders: fc.Server.TrustProxyHeaders,
+			CookieSecure:      fc.Server.CookieSecure,
 		},
 		Browser: browserConfigJSON{
 			ChromeVersion:    fc.Browser.ChromeVersion,
@@ -304,13 +307,14 @@ func (fc FileConfig) MarshalJSON() ([]byte, error) {
 				AllowSchemes: copyStringSlice(fc.Security.Attach.AllowSchemes),
 			},
 			IDPI: idpiConfigJSON{
-				Enabled:        fc.Security.IDPI.Enabled,
-				AllowedDomains: copyStringSlice(fc.Security.IDPI.AllowedDomains),
-				StrictMode:     fc.Security.IDPI.StrictMode,
-				ScanContent:    fc.Security.IDPI.ScanContent,
-				WrapContent:    fc.Security.IDPI.WrapContent,
-				CustomPatterns: copyStringSlice(fc.Security.IDPI.CustomPatterns),
-				ScanTimeoutSec: fc.Security.IDPI.ScanTimeoutSec,
+				Enabled:         fc.Security.IDPI.Enabled,
+				AllowedDomains:  copyStringSlice(fc.Security.IDPI.AllowedDomains),
+				StrictMode:      fc.Security.IDPI.StrictMode,
+				ScanContent:     fc.Security.IDPI.ScanContent,
+				WrapContent:     fc.Security.IDPI.WrapContent,
+				CustomPatterns:  copyStringSlice(fc.Security.IDPI.CustomPatterns),
+				ScanTimeoutSec:  fc.Security.IDPI.ScanTimeoutSec,
+				ShieldThreshold: fc.Security.IDPI.ShieldThreshold,
 			},
 		},
 		Profiles: profilesConfigJSON{
@@ -413,6 +417,7 @@ func FileConfigFromRuntime(cfg *RuntimeConfig) FileConfig {
 			Engine:            cfg.Engine,
 			NetworkBufferSize: netBufSize,
 			TrustProxyHeaders: &cfg.TrustProxyHeaders,
+			CookieSecure:      cfg.CookieSecure,
 		},
 		Browser: BrowserConfig{
 			ChromeVersion:    cfg.ChromeVersion,

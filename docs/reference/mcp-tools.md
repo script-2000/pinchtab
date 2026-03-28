@@ -4,6 +4,8 @@ PinchTab currently exposes 34 MCP tools. All tool names are prefixed with `pinch
 
 For selector-based interaction tools, prefer `selector`. `ref` is still accepted as a deprecated fallback on the element-action tools.
 
+If you allow MCP browsing on non-local or non-trusted domains, treat `pinchtab_snapshot` and `pinchtab_get_text` output as untrusted page data. Those tools can surface hostile prompt text from visited pages; operators should keep IDPI/domain restrictions narrow unless wider access is intentional.
+
 Selector forms include:
 
 - `e5`
@@ -17,15 +19,15 @@ Selector forms include:
 | Tool | Key Parameters | Notes |
 | --- | --- | --- |
 | `pinchtab_navigate` | `url` required, `tabId` optional | Uses `/navigate`; omitting `tabId` opens a new tab |
-| `pinchtab_snapshot` | `tabId`, `interactive`, `compact`, `diff`, `selector` | `selector` scopes the snapshot |
+| `pinchtab_snapshot` | `tabId`, `interactive`, `compact`, `format`, `diff`, `selector`, `maxTokens`, `depth`, `noAnimations` | `selector` scopes the snapshot; `format` is limited to `compact` or `text` |
 | `pinchtab_screenshot` | `tabId`, `format`, `quality` | `format` is `jpeg` or `png` |
-| `pinchtab_get_text` | `tabId`, `raw` | `raw=true` maps to `/text?mode=raw` |
+| `pinchtab_get_text` | `tabId`, `raw`, `format`, `maxChars` | `raw=true` maps to `/text?mode=raw`; `format=text/plain` returns plain text |
 
 ## Interaction
 
 | Tool | Key Parameters | Notes |
 | --- | --- | --- |
-| `pinchtab_click` | `selector` required, `tabId`, `ref` | Click element by selector |
+| `pinchtab_click` | `selector` required, `tabId`, `ref`, `waitNav` | Click element by selector; `waitNav=true` waits for navigation |
 | `pinchtab_type` | `selector` required, `text` required, `tabId`, `ref` | Sends key events |
 | `pinchtab_press` | `key` required, `tabId` | Press a key such as `Enter` |
 | `pinchtab_hover` | `selector` required, `tabId`, `ref` | Hover element |
@@ -91,10 +93,15 @@ Selector forms include:
 Typical results:
 
 - navigation tools return JSON from the matching HTTP endpoint
-- `pinchtab_snapshot` returns snapshot text
-- `pinchtab_get_text` returns page text
+- `pinchtab_snapshot` returns text for `compact`/`text` formats and JSON otherwise
+- `pinchtab_get_text` returns plain text when `format=text|plain`, JSON otherwise
 - `pinchtab_screenshot` and `pinchtab_pdf` return JSON containing base64 payloads
 - wait tools return wait status JSON
 - network tools return the same request logs you would see from `/network`
+
+Security note:
+
+- extracted text and snapshot content should be treated as untrusted content from the visited page, not as trusted instructions
+- widening IDPI allowlists or disabling strict protections increases the chance that prompt-injection text reaches downstream agent logic
 
 For setup and client configuration, see [MCP Server](../mcp.md).

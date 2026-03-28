@@ -62,6 +62,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.TrustProxyHeaders {
 		t.Errorf("default TrustProxyHeaders = %v, want false", cfg.TrustProxyHeaders)
 	}
+	if cfg.CookieSecure != nil {
+		t.Errorf("default CookieSecure = %v, want nil for auto-detect", *cfg.CookieSecure)
+	}
 	if len(cfg.DownloadAllowedDomains) != 0 {
 		t.Errorf("default DownloadAllowedDomains = %v, want empty list", cfg.DownloadAllowedDomains)
 	}
@@ -275,6 +278,35 @@ func TestApplyFileConfigToRuntimeResetsSecurityFlagsToSafeDefaults(t *testing.T)
 	}
 }
 
+func TestLoadPreservesIDPIShieldThreshold(t *testing.T) {
+	clearConfigEnvVars(t)
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	_ = os.Setenv("PINCHTAB_CONFIG", configPath)
+	defer func() { _ = os.Unsetenv("PINCHTAB_CONFIG") }()
+
+	if err := os.WriteFile(configPath, []byte(`{
+		"security": {
+			"idpi": {
+				"enabled": true,
+				"strictMode": true,
+				"scanContent": true,
+				"wrapContent": true,
+				"allowedDomains": ["fixtures"],
+				"shieldThreshold": 30
+			}
+		}
+	}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if cfg.IDPI.ShieldThreshold != 30 {
+		t.Fatalf("IDPI.ShieldThreshold = %d, want 30", cfg.IDPI.ShieldThreshold)
+	}
+}
+
 func TestApplyFileConfigToRuntimeClearsTokenWhenFileTokenRemoved(t *testing.T) {
 	clearConfigEnvVars(t)
 
@@ -445,6 +477,48 @@ func TestApplyFileConfigToRuntime_TrustProxyHeaders(t *testing.T) {
 	applyFileConfig(cfg, fc2)
 	if cfg.TrustProxyHeaders {
 		t.Fatal("expected TrustProxyHeaders to be false after apply with false")
+	}
+}
+
+func TestApplyFileConfigToRuntime_CookieSecure(t *testing.T) {
+	cfg := &RuntimeConfig{}
+	if cfg.CookieSecure != nil {
+		t.Fatal("expected default CookieSecure to be nil")
+	}
+
+	enabled := true
+	fc := &FileConfig{Server: ServerConfig{CookieSecure: &enabled}}
+	applyFileConfig(cfg, fc)
+	if cfg.CookieSecure == nil || !*cfg.CookieSecure {
+		t.Fatal("expected CookieSecure to be true after apply")
+	}
+
+	disabled := false
+	fc2 := &FileConfig{Server: ServerConfig{CookieSecure: &disabled}}
+	applyFileConfig(cfg, fc2)
+	if cfg.CookieSecure == nil || *cfg.CookieSecure {
+		t.Fatal("expected CookieSecure to be false after apply with false")
+	}
+
+	fc3 := &FileConfig{}
+	applyFileConfig(cfg, fc3)
+	if cfg.CookieSecure != nil {
+		t.Fatal("expected CookieSecure to reset to nil when omitted")
+	}
+}
+
+func TestApplyFileConfigToRuntime_SanitizesChromeExtraFlags(t *testing.T) {
+	cfg := &RuntimeConfig{}
+	fc := &FileConfig{
+		Browser: BrowserConfig{
+			ChromeExtraFlags: "--disable-gpu --user-agent=Bad/1.0 --disable-web-security --ash-no-nudges",
+		},
+	}
+
+	ApplyFileConfigToRuntime(cfg, fc)
+
+	if cfg.ChromeExtraFlags != "--disable-gpu --ash-no-nudges" {
+		t.Fatalf("ChromeExtraFlags = %q, want %q", cfg.ChromeExtraFlags, "--disable-gpu --ash-no-nudges")
 	}
 }
 

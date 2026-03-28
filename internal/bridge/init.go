@@ -5,13 +5,14 @@ import (
 
 	bridgeruntime "github.com/pinchtab/pinchtab/internal/bridge/runtime"
 	"github.com/pinchtab/pinchtab/internal/config"
+	"github.com/pinchtab/pinchtab/internal/stealth"
 )
 
-const popupGuardInitScript = bridgeruntime.PopupGuardInitScript
+const popupGuardInitScript = stealth.PopupGuardInitScript
 
 // InitChrome initializes a Chrome browser for a Bridge instance.
-func InitChrome(cfg *config.RuntimeConfig) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, error) {
-	return bridgeruntime.InitChrome(cfg, bridgeruntime.Hooks{
+func InitChrome(cfg *config.RuntimeConfig, bundle *stealth.Bundle) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, stealth.LaunchMode, error) {
+	return bridgeruntime.InitChrome(cfg, bundle, bridgeruntime.Hooks{
 		SetHumanRandSeed:          SetHumanRandSeed,
 		IsChromeProfileLockError:  isChromeProfileLockError,
 		ClearStaleChromeProfile:   clearStaleChromeProfileLock,
@@ -19,8 +20,8 @@ func InitChrome(cfg *config.RuntimeConfig) (context.Context, context.CancelFunc,
 	})
 }
 
-func defaultChromeFlagArgs() []string {
-	return bridgeruntime.DefaultChromeFlagArgs()
+func baseChromeFlagArgs() []string {
+	return bridgeruntime.BaseChromeFlagArgs()
 }
 
 func buildChromeArgs(cfg *config.RuntimeConfig, port int) []string {

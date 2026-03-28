@@ -2,8 +2,10 @@ package bridge
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"os"
 	"sync"
 	"time"
@@ -12,17 +14,19 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/ids"
+	"github.com/pinchtab/pinchtab/internal/stealth"
 )
 
 type TabEntry struct {
-	Ctx       context.Context
-	Cancel    context.CancelFunc
-	Accessed  bool
-	CDPID     string    // raw CDP target ID
-	CreatedAt time.Time // when the tab was first created/registered
-	LastUsed  time.Time // last time the tab was accessed via TabContext
-	Policy    TabPolicyState
-	Watching  bool
+	Ctx                   context.Context
+	Cancel                context.CancelFunc
+	Accessed              bool
+	CDPID                 string    // raw CDP target ID
+	CreatedAt             time.Time // when the tab was first created/registered
+	LastUsed              time.Time // last time the tab was accessed via TabContext
+	Policy                TabPolicyState
+	Watching              bool
+	ConsoleCaptureEnabled bool
 }
 
 type RefCache struct {
@@ -38,7 +42,7 @@ type Bridge struct {
 	Config        *config.RuntimeConfig
 	IdMgr         *ids.Manager
 	*TabManager
-	StealthScript string
+	StealthBundle *stealth.Bundle
 	Actions       map[string]ActionFunc
 	Locks         *LockManager
 	Dialogs       *DialogManager
@@ -47,6 +51,10 @@ type Bridge struct {
 	// Network monitoring
 	netMonitor *NetworkMonitor
 
+	fingerprintMu        sync.RWMutex
+	fingerprintOverlays  map[string]bool
+	workerStealthTargets sync.Map
+
 	// Lazy initialization
 	initMu      sync.Mutex
 	initialized bool
@@ -54,6 +62,8 @@ type Bridge struct {
 	// Temp profile cleanup: directories created as fallback when profile lock fails.
 	// These are removed on Cleanup() to prevent Chrome process/disk leaks.
 	tempProfileDir string
+
+	stealthLaunchMode stealth.LaunchMode
 }
 
 func New(allocCtx, browserCtx context.Context, cfg *config.RuntimeConfig) *Bridge {
@@ -64,18 +74,24 @@ func New(allocCtx, browserCtx context.Context, cfg *config.RuntimeConfig) *Bridg
 	}
 	logStore := NewConsoleLogStore(1000)
 	b := &Bridge{
-		AllocCtx:   allocCtx,
-		BrowserCtx: browserCtx,
-		Config:     cfg,
-		IdMgr:      idMgr,
-		netMonitor: NewNetworkMonitor(netBufSize),
-		LogStore:   logStore,
+		AllocCtx:            allocCtx,
+		BrowserCtx:          browserCtx,
+		Config:              cfg,
+		IdMgr:               idMgr,
+		netMonitor:          NewNetworkMonitor(netBufSize),
+		fingerprintOverlays: make(map[string]bool),
+		LogStore:            logStore,
+		stealthLaunchMode:   stealth.LaunchModeUninitialized,
 	}
+	b.ensureStealthBundle()
 	// Only initialize TabManager if browserCtx is provided (not lazy-init case)
 	if cfg != nil && browserCtx != nil {
 		b.TabManager = NewTabManager(browserCtx, cfg, idMgr, logStore, b.tabSetup)
 		b.SetDialogManager(b.Dialogs)
-		b.StartBrowserGuards()
+		b.SetNetworkMonitor(b.netMonitor)
+		if !b.quietStealthObservers() {
+			b.StartBrowserGuards()
+		}
 	}
 	b.Locks = NewLockManager()
 	b.Dialogs = NewDialogManager()
@@ -83,13 +99,17 @@ func New(allocCtx, browserCtx context.Context, cfg *config.RuntimeConfig) *Bridg
 	return b
 }
 
+func (b *Bridge) quietStealthObservers() bool {
+	return b != nil && b.Config != nil && stealth.NormalizeLevel(b.Config.StealthLevel) == stealth.LevelFull
+}
+
 func (b *Bridge) injectStealth(ctx context.Context) {
-	if b.StealthScript == "" {
+	if b.StealthBundle == nil || b.StealthBundle.Script == "" {
 		return
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			_, err := page.AddScriptToEvaluateOnNewDocument(b.StealthScript).Do(ctx)
+			_, err := page.AddScriptToEvaluateOnNewDocument(b.StealthBundle.Script).Do(ctx)
 			return err
 		}),
 	); err != nil {
@@ -97,27 +117,27 @@ func (b *Bridge) injectStealth(ctx context.Context) {
 	}
 }
 
-func (b *Bridge) injectPopupGuards(ctx context.Context) {
-	if err := chromedp.Run(ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			_, err := page.AddScriptToEvaluateOnNewDocument(popupGuardInitScript).Do(ctx)
-			return err
-		}),
-	); err != nil {
-		slog.Warn("popup guard injection failed", "err", err)
+func (b *Bridge) applyTargetStealth(ctx context.Context) {
+	if b == nil || b.Config == nil {
+		return
+	}
+
+	ua := ""
+	if b.StealthBundle != nil {
+		ua = b.StealthBundle.LaunchUserAgent()
+	}
+
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		return stealth.ApplyTargetEmulation(ctx, b.Config, ua)
+	})); err != nil {
+		slog.Warn("stealth target emulation failed", "err", err)
 	}
 }
 
 func (b *Bridge) tabSetup(ctx context.Context) {
-	if override := buildUserAgentOverride(b.Config.UserAgent, b.Config.ChromeVersion); override != nil {
-		if err := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
-			return override.Do(c)
-		})); err != nil {
-			slog.Warn("ua override failed on tab setup", "err", err)
-		}
-	}
+	b.applyTargetStealth(ctx)
+	b.installWorkerStealthParity(ctx)
 	b.injectStealth(ctx)
-	b.injectPopupGuards(ctx)
 	if b.Config.NoAnimations {
 		if err := b.InjectNoAnimations(ctx); err != nil {
 			slog.Warn("no-animations injection failed", "err", err)
@@ -151,6 +171,9 @@ func (b *Bridge) GetConsoleLogs(tabID string, limit int) []LogEntry {
 	if b.LogStore == nil {
 		return nil
 	}
+	if b.TabManager != nil {
+		b.EnsureConsoleCapture(tabID)
+	}
 	return b.LogStore.GetConsoleLogs(tabID, limit)
 }
 
@@ -165,6 +188,9 @@ func (b *Bridge) ClearConsoleLogs(tabID string) {
 func (b *Bridge) GetErrorLogs(tabID string, limit int) []ErrorEntry {
 	if b.LogStore == nil {
 		return nil
+	}
+	if b.TabManager != nil {
+		b.EnsureConsoleCapture(tabID)
 	}
 	return b.LogStore.GetErrorLogs(tabID, limit)
 }
@@ -229,7 +255,8 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 	}
 
 	slog.Info("starting chrome with confirmed profile", "headless", cfg.Headless, "profile", cfg.ProfileDir)
-	allocCtx, allocCancel, browserCtx, browserCancel, err := InitChrome(cfg)
+	b.ensureStealthBundle()
+	allocCtx, allocCancel, browserCtx, browserCancel, launchMode, err := InitChrome(cfg, b.StealthBundle)
 	if err != nil {
 		return fmt.Errorf("failed to initialize chrome: %w", err)
 	}
@@ -239,6 +266,7 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 	b.BrowserCtx = browserCtx
 	b.BrowserCancel = browserCancel
 	b.initialized = true
+	b.stealthLaunchMode = launchMode
 
 	// Initialize TabManager now that browser is ready
 	if b.Config != nil && b.TabManager == nil {
@@ -250,7 +278,10 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 		}
 		b.TabManager = NewTabManager(browserCtx, b.Config, b.IdMgr, b.LogStore, b.tabSetup)
 		b.SetDialogManager(b.Dialogs)
-		b.StartBrowserGuards()
+		b.SetNetworkMonitor(b.netMonitor)
+		if !b.quietStealthObservers() {
+			b.StartBrowserGuards()
+		}
 	}
 
 	// Ensure action registry is populated (idempotent)
@@ -264,7 +295,9 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 	}
 
 	// Start crash monitoring
-	b.MonitorCrashes(nil)
+	if !b.quietStealthObservers() {
+		b.MonitorCrashes(nil)
+	}
 
 	return nil
 }
@@ -329,6 +362,7 @@ func (b *Bridge) SetBrowserContexts(allocCtx context.Context, allocCancel contex
 	b.BrowserCtx = browserCtx
 	b.BrowserCancel = browserCancel
 	b.initialized = true
+	b.stealthLaunchMode = stealth.LaunchModeAttached
 
 	// Now initialize TabManager with the browser context
 	if b.Config != nil && b.TabManager == nil {
@@ -340,7 +374,38 @@ func (b *Bridge) SetBrowserContexts(allocCtx context.Context, allocCancel contex
 		}
 		b.TabManager = NewTabManager(browserCtx, b.Config, b.IdMgr, b.LogStore, b.tabSetup)
 		b.SetDialogManager(b.Dialogs)
+		b.SetNetworkMonitor(b.netMonitor)
 	}
+}
+
+func (b *Bridge) ensureStealthBundle() {
+	if b.StealthBundle != nil || b.Config == nil {
+		return
+	}
+	b.StealthBundle = stealth.NewBundle(b.Config, cryptoRandSeed())
+}
+
+func (b *Bridge) StealthStatus() *stealth.Status {
+	b.ensureStealthBundle()
+	return stealth.StatusFromBundle(b.StealthBundle, b.Config, b.stealthLaunchMode)
+}
+
+func (b *Bridge) SetFingerprintRotateActive(tabID string, active bool) {
+	if tabID == "" {
+		return
+	}
+	b.fingerprintMu.Lock()
+	defer b.fingerprintMu.Unlock()
+	b.fingerprintOverlays[tabID] = active
+}
+
+func (b *Bridge) FingerprintRotateActive(tabID string) bool {
+	if tabID == "" {
+		return false
+	}
+	b.fingerprintMu.RLock()
+	defer b.fingerprintMu.RUnlock()
+	return b.fingerprintOverlays[tabID]
 }
 
 func (b *Bridge) BrowserContext() context.Context {
@@ -436,4 +501,12 @@ func (r *ActionRequest) NormalizeSelector() {
 	}
 	// If Selector is already set (either from JSON or from Ref promotion),
 	// leave it as-is — Parse() will auto-detect the kind.
+}
+
+func cryptoRandSeed() int64 {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000000))
+	if err != nil {
+		return 42
+	}
+	return n.Int64()
 }

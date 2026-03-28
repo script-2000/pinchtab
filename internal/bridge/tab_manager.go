@@ -31,6 +31,7 @@ type TabManager struct {
 	onTabSetup TabSetupFunc
 	dialogMgr  *DialogManager
 	logStore   *ConsoleLogStore
+	netMonitor *NetworkMonitor
 	currentTab string // ID of the most recently used tab
 	executor   *TabExecutor
 	guardOnce  sync.Once
@@ -61,6 +62,11 @@ func NewTabManager(browserCtx context.Context, cfg *config.RuntimeConfig, idMgr 
 // SetDialogManager sets the dialog manager for dialog event tracking on new tabs.
 func (tm *TabManager) SetDialogManager(dm *DialogManager) {
 	tm.dialogMgr = dm
+}
+
+// SetNetworkMonitor sets the network monitor for eager network capture on new tabs.
+func (tm *TabManager) SetNetworkMonitor(nm *NetworkMonitor) {
+	tm.netMonitor = nm
 }
 
 func shouldBlockPopupTarget(info *target.Info) bool {
@@ -197,6 +203,11 @@ func (tm *TabManager) TabContext(tabID string) (context.Context, string, error) 
 					ctx, cancel := chromedp.NewContext(tm.browserCtx, chromedp.WithTargetID(target.ID(raw)))
 					if tm.onTabSetup != nil {
 						tm.onTabSetup(ctx)
+					}
+					if tm.netMonitor != nil {
+						if err := tm.netMonitor.StartCapture(ctx, tabID); err != nil {
+							slog.Warn("eager network capture failed", "tab", tabID, "err", err)
+						}
 					}
 					tm.RegisterTabWithCancel(tabID, raw, ctx, cancel)
 
@@ -337,6 +348,16 @@ func (tm *TabManager) CreateTab(url string) (string, context.Context, context.Ca
 		_ = SetResourceBlocking(ctx, blockPatterns)
 	}
 
+	rawCDPID := string(targetID)
+	tabID := tm.idMgr.TabIDFromCDPTarget(rawCDPID)
+
+	// Start network capture before navigation so CDP events are captured.
+	if tm.netMonitor != nil {
+		if err := tm.netMonitor.StartCapture(ctx, tabID); err != nil {
+			slog.Warn("eager network capture failed", "tab", tabID, "err", err)
+		}
+	}
+
 	if url != "" && url != "about:blank" {
 		navCtx, navCancel := context.WithTimeout(ctx, 30*time.Second)
 		if err := chromedp.Run(navCtx, chromedp.Navigate(url)); err != nil {
@@ -348,8 +369,6 @@ func (tm *TabManager) CreateTab(url string) (string, context.Context, context.Ca
 		navCancel()
 	}
 
-	rawCDPID := string(targetID)
-	tabID := tm.idMgr.TabIDFromCDPTarget(rawCDPID)
 	now := time.Now()
 
 	// Set up dialog event listening for this tab
@@ -358,11 +377,19 @@ func (tm *TabManager) CreateTab(url string) (string, context.Context, context.Ca
 		ListenDialogEvents(ctx, tabID, tm.dialogMgr, autoAccept)
 	}
 
-	// Set up console and error log capturing
-	tm.setupConsoleCapture(ctx, rawCDPID)
+	if tm.shouldEagerlyCaptureConsole() {
+		tm.setupConsoleCapture(ctx, rawCDPID)
+	}
 
 	tm.mu.Lock()
-	tm.tabs[tabID] = &TabEntry{Ctx: ctx, Cancel: cancel, CDPID: rawCDPID, CreatedAt: now, LastUsed: now}
+	tm.tabs[tabID] = &TabEntry{
+		Ctx:                   ctx,
+		Cancel:                cancel,
+		CDPID:                 rawCDPID,
+		CreatedAt:             now,
+		LastUsed:              now,
+		ConsoleCaptureEnabled: tm.shouldEagerlyCaptureConsole(),
+	}
 	tm.accessed[tabID] = true
 	tm.currentTab = tabID
 	tm.mu.Unlock()
@@ -791,6 +818,35 @@ func (tm *TabManager) setupConsoleCapture(ctx context.Context, rawCDPID string) 
 			return runtime.Enable().Do(c)
 		}))
 	}()
+}
+
+func (tm *TabManager) shouldEagerlyCaptureConsole() bool {
+	if tm == nil || tm.config == nil {
+		return true
+	}
+	return !strings.EqualFold(strings.TrimSpace(tm.config.StealthLevel), "full")
+}
+
+func (tm *TabManager) EnsureConsoleCapture(tabID string) {
+	if tm == nil || tm.logStore == nil {
+		return
+	}
+
+	tm.mu.Lock()
+	entry := tm.tabs[tabID]
+	if entry == nil && tabID == "" {
+		entry = tm.tabs[tm.currentTab]
+	}
+	if entry == nil || entry.Ctx == nil || entry.ConsoleCaptureEnabled {
+		tm.mu.Unlock()
+		return
+	}
+	entry.ConsoleCaptureEnabled = true
+	ctx := entry.Ctx
+	rawCDPID := entry.CDPID
+	tm.mu.Unlock()
+
+	tm.setupConsoleCapture(ctx, rawCDPID)
 }
 
 func executionContextSource(ctx *runtime.ExecutionContextDescription) string {

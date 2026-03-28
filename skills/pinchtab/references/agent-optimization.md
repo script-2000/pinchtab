@@ -131,15 +131,21 @@ pinchtab snap -i -c      # fresh snapshot → new refs
 
 ---
 
-### Bot Detection / CAPTCHA
-**Cause:** Target site detected automated behavior.
+### Bot Detection / CAPTCHA / Cloudflare
+**Cause:** Target site detected automated behavior or uses a challenge gateway.
 
 **Recovery options:**
-1. `pinchtab screenshot` — confirm what's blocking
-2. Slow down: add `pinchtab wait --ms 1500` between interactions
-3. Avoid rapid sequential clicks — space them out
-4. Switch to a profile with existing session cookies
-5. If CAPTCHA: manual intervention required — report to user
+1. Try `POST /solve` first — it auto-detects Cloudflare Turnstile and solves it:
+   ```bash
+   curl -X POST http://localhost:9867/solve \
+     -H 'Content-Type: application/json' -d '{"maxAttempts": 3}'
+   ```
+2. If solve returns `solved: false`, try with more attempts or check `challengeType`
+3. Slow down: add `pinchtab wait --ms 1500` between interactions
+4. Switch to a profile with existing session cookies (CF cookies persist)
+5. If unsupported CAPTCHA (not Cloudflare): report to user for manual intervention
+6. Check `GET /solvers` to see which solver types are available
+7. Verify `stealthLevel: "full"` is active — solvers depend on it. Check with `GET /stealth/status`
 
 ---
 
@@ -165,3 +171,4 @@ pinchtab nav <url> --block-images --timeout 60
 - **Scope snapshots.** Use `snap -s <selector>` to target a specific section of the page when you know where the element is.
 - **Prefer `fill` over `type` for framework forms.** Saves retries caused by React/Vue not detecting raw keystroke events.
 - **Check health before long workflows.** Run `pinchtab health` at the start of a multi-step task to fail fast if the server is down.
+- **Export network traces after sessions.** `pinchtab network-export -o session.har` captures every request. For live capture: `pinchtab network-export --stream -o live.har`.

@@ -90,7 +90,7 @@ func AuthMiddlewareWithSessions(cfg *config.RuntimeConfig, sessions *authn.Sessi
 
 		creds := authn.CredentialsFromRequest(r)
 		if creds.Value == "" {
-			authn.ClearSessionCookie(w, r)
+			authn.ClearSessionCookie(w, r, cfg != nil && cfg.TrustProxyHeaders, cookieSecureSetting(cfg))
 			w.Header().Set("WWW-Authenticate", `Bearer realm="pinchtab", error="missing_token"`)
 			httpx.ErrorCode(w, 401, "missing_token", "unauthorized", false, nil)
 			return
@@ -99,7 +99,7 @@ func AuthMiddlewareWithSessions(cfg *config.RuntimeConfig, sessions *authn.Sessi
 		switch creds.Method {
 		case authn.MethodHeader:
 			if subtle.ConstantTimeCompare([]byte(creds.Value), []byte(token)) != 1 {
-				authn.ClearSessionCookie(w, r)
+				authn.ClearSessionCookie(w, r, cfg != nil && cfg.TrustProxyHeaders, cookieSecureSetting(cfg))
 				w.Header().Set("WWW-Authenticate", `Bearer realm="pinchtab", error="bad_token"`)
 				httpx.ErrorCode(w, 401, "bad_token", "unauthorized", false, nil)
 				return
@@ -112,7 +112,7 @@ func AuthMiddlewareWithSessions(cfg *config.RuntimeConfig, sessions *authn.Sessi
 				return
 			}
 			if sessions == nil || !sessions.Validate(creds.Value, token) {
-				authn.ClearSessionCookie(w, r)
+				authn.ClearSessionCookie(w, r, cfg != nil && cfg.TrustProxyHeaders, cookieSecureSetting(cfg))
 				w.Header().Set("WWW-Authenticate", `Bearer realm="pinchtab", error="bad_token"`)
 				httpx.ErrorCode(w, 401, "bad_token", "unauthorized", false, nil)
 				return
@@ -129,7 +129,7 @@ func AuthMiddlewareWithSessions(cfg *config.RuntimeConfig, sessions *authn.Sessi
 				return
 			}
 		default:
-			authn.ClearSessionCookie(w, r)
+			authn.ClearSessionCookie(w, r, cfg != nil && cfg.TrustProxyHeaders, cookieSecureSetting(cfg))
 			w.Header().Set("WWW-Authenticate", `Bearer realm="pinchtab", error="bad_token"`)
 			httpx.ErrorCode(w, 401, "bad_token", "unauthorized", false, nil)
 			return
@@ -163,6 +163,7 @@ func cookieAuthAllowed(r *http.Request) bool {
 		case path == "/health",
 			path == "/metrics",
 			path == "/api/activity",
+			path == "/api/agents",
 			path == "/api/events",
 			path == "/api/config",
 			path == "/profiles",
@@ -171,6 +172,8 @@ func cookieAuthAllowed(r *http.Request) bool {
 			path == "/instances/metrics":
 			return true
 		case strings.HasPrefix(path, "/instances/") && strings.HasSuffix(path, "/tabs"),
+			strings.HasPrefix(path, "/api/agents/") && !strings.HasSuffix(path, "/events"),
+			strings.HasPrefix(path, "/api/agents/") && strings.HasSuffix(path, "/events"),
 			strings.HasPrefix(path, "/instances/") && strings.HasSuffix(path, "/logs"),
 			strings.HasPrefix(path, "/instances/") && strings.HasSuffix(path, "/logs/stream"),
 			strings.HasPrefix(path, "/instances/") && strings.HasSuffix(path, "/proxy/screencast"),
@@ -182,9 +185,13 @@ func cookieAuthAllowed(r *http.Request) bool {
 		switch {
 		case path == "/api/auth/elevate":
 			return true
+		case strings.HasPrefix(path, "/api/agents/") && strings.HasSuffix(path, "/events"):
+			return true
 		case path == "/action":
 			return true
 		case path == "/instances/launch":
+			return true
+		case strings.HasPrefix(path, "/tabs/") && strings.HasSuffix(path, "/close"):
 			return true
 		case strings.HasPrefix(path, "/instances/") && strings.HasSuffix(path, "/stop"):
 			return true
@@ -282,6 +289,13 @@ func isWebSocketUpgrade(r *http.Request) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
+}
+
+func cookieSecureSetting(cfg *config.RuntimeConfig) *bool {
+	if cfg == nil {
+		return nil
+	}
+	return cfg.CookieSecure
 }
 
 func requestScheme(r *http.Request, trustProxy bool) string {

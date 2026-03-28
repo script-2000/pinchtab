@@ -52,13 +52,23 @@ type Agent struct {
 	RequestCount int       `json:"requestCount"`
 }
 
+// AgentDetail returns agent-centric dashboard data for a single agent.
+type AgentDetail struct {
+	Agent  Agent           `json:"agent"`
+	Events []ActivityEvent `json:"events"`
+}
+
 // ActivityEvent represents an action in the activity feed.
 type ActivityEvent struct {
 	ID        string                 `json:"id"`
 	AgentID   string                 `json:"agentId"`
-	Type      string                 `json:"type"` // navigate/snapshot/action/screenshot/other
+	Channel   string                 `json:"channel"` // "tool_call" or "progress"
+	Type      string                 `json:"type"`    // navigate/snapshot/action/screenshot/other
 	Method    string                 `json:"method"`
 	Path      string                 `json:"path"`
+	Message   string                 `json:"message,omitempty"`  // human-readable (progress channel)
+	Progress  *int                   `json:"progress,omitempty"` // 0-100 numeric progress
+	Total     *int                   `json:"total,omitempty"`    // total steps
 	Timestamp time.Time              `json:"timestamp"`
 	Details   map[string]interface{} `json:"details,omitempty"`
 }
@@ -112,6 +122,12 @@ type Settings struct {
 	Stealth    string             `json:"stealth"` // light/medium/full
 	Browser    BrowserSettings    `json:"browser"`
 	Monitoring MonitoringSettings `json:"monitoring"`
+	Agents     AgentSettings      `json:"agents"`
+}
+
+// AgentSettings controls agent reasoning output visibility.
+type AgentSettings struct {
+	ReasoningMode string `json:"reasoningMode"` // "tool_calls" (default), "progress", "both"
 }
 
 // MonitoringSettings controls dashboard monitoring features.

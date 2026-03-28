@@ -19,6 +19,7 @@ func Load() *RuntimeConfig {
 		InstancePortEnd:   9968,
 		Token:             os.Getenv("PINCHTAB_TOKEN"),
 		StateDir:          userConfigDir(),
+		CookieSecure:      nil,
 
 		// Security defaults
 		AllowEvaluate:          false,
@@ -197,6 +198,7 @@ func applyFileConfig(cfg *RuntimeConfig, fc *FileConfig) {
 	if fc.Server.TrustProxyHeaders != nil {
 		cfg.TrustProxyHeaders = *fc.Server.TrustProxyHeaders
 	}
+	cfg.CookieSecure = fc.Server.CookieSecure
 	// Security
 	if fc.Security.AllowEvaluate != nil {
 		cfg.AllowEvaluate = *fc.Security.AllowEvaluate
@@ -264,7 +266,7 @@ func applyFileConfig(cfg *RuntimeConfig, fc *FileConfig) {
 		cfg.ChromeDebugPort = *fc.Browser.ChromeDebugPort
 	}
 	if fc.Browser.ChromeExtraFlags != "" {
-		cfg.ChromeExtraFlags = fc.Browser.ChromeExtraFlags
+		cfg.ChromeExtraFlags = SanitizeChromeExtraFlags(fc.Browser.ChromeExtraFlags)
 	}
 	if len(fc.Browser.ExtensionPaths) > 0 {
 		cfg.ExtensionPaths = fc.Browser.ExtensionPaths
