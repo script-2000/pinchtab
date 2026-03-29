@@ -11,6 +11,14 @@ import (
 	"github.com/pinchtab/pinchtab/internal/httpx"
 )
 
+func (h *Handlers) HandleLive(w http.ResponseWriter, _ *http.Request) {
+	resp := map[string]any{"status": "ok"}
+	if h.Router != nil && h.Router.Mode() == engine.ModeLite {
+		resp["engine"] = "lite"
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
 func (h *Handlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	if h.Router != nil && h.Router.Mode() == engine.ModeLite {
 		resp := map[string]any{

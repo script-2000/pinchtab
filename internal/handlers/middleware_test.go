@@ -717,6 +717,25 @@ func TestLoggingMiddleware(t *testing.T) {
 	}
 }
 
+func TestShouldLogRequest(t *testing.T) {
+	tests := []struct {
+		path   string
+		status int
+		want   bool
+	}{
+		{path: "/health", status: http.StatusOK, want: false},
+		{path: "/live", status: http.StatusOK, want: false},
+		{path: "/health", status: http.StatusServiceUnavailable, want: true},
+		{path: "/navigate", status: http.StatusOK, want: true},
+	}
+
+	for _, tt := range tests {
+		if got := shouldLogRequest(tt.path, tt.status); got != tt.want {
+			t.Fatalf("shouldLogRequest(%q, %d) = %v, want %v", tt.path, tt.status, got, tt.want)
+		}
+	}
+}
+
 func TestLoggingMiddleware_RecordsFailure(t *testing.T) {
 	resetObservabilityForTests()
 	handler := RequestIDMiddleware(LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

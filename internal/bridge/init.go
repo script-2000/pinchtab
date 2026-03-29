@@ -2,7 +2,9 @@ package bridge
 
 import (
 	"context"
+	"strings"
 
+	"github.com/chromedp/chromedp"
 	bridgeruntime "github.com/pinchtab/pinchtab/internal/bridge/runtime"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/stealth"

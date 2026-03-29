@@ -102,6 +102,7 @@ func (h *Handlers) useLite(op engine.Capability, url string) bool {
 }
 
 func (h *Handlers) RegisterRoutes(mux *http.ServeMux, doShutdown func()) {
+	mux.HandleFunc("GET /live", h.HandleLive)
 	mux.HandleFunc("GET /health", h.HandleHealth)
 	mux.HandleFunc("POST /ensure-chrome", h.HandleEnsureChrome)
 	mux.HandleFunc("GET /tabs", h.HandleTabs)

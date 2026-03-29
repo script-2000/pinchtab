@@ -49,14 +49,29 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 				Type:      "http_error",
 			})
 		}
-		slog.Info("request",
-			"requestId", w.Header().Get("X-Request-Id"),
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", sw.Code,
-			"ms", ms,
-		)
+		if shouldLogRequest(r.URL.Path, sw.Code) {
+			slog.Info("request",
+				"requestId", w.Header().Get("X-Request-Id"),
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", sw.Code,
+				"ms", ms,
+			)
+		}
 	})
+}
+
+func shouldLogRequest(path string, status int) bool {
+	if status >= http.StatusBadRequest {
+		return true
+	}
+
+	switch path {
+	case "/health", "/live":
+		return false
+	default:
+		return true
+	}
 }
 
 func SecurityHeadersMiddleware(cfg *config.RuntimeConfig, next http.Handler) http.Handler {

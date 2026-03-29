@@ -119,6 +119,39 @@ func TestHandleHealth_Success(t *testing.T) {
 	}
 }
 
+func TestHandleLive_SuccessSkipsChrome(t *testing.T) {
+	mockBridge := &MockBridge{
+		ensureChromeErr: "should not be called",
+	}
+
+	h := &Handlers{
+		Bridge: mockBridge,
+		Config: &config.RuntimeConfig{},
+	}
+
+	req := httptest.NewRequest("GET", "/live", nil)
+	w := httptest.NewRecorder()
+
+	h.HandleLive(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	if mockBridge.ensureChromeCalled {
+		t.Error("expected live check to skip ensureChrome")
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if status, ok := resp["status"]; !ok || status != "ok" {
+		t.Errorf("expected status=ok, got %v", status)
+	}
+}
+
 // TestHandleTabs_NilBridge verifies tabs endpoint returns 503 when bridge is nil
 func TestHandleTabs_NilBridge(t *testing.T) {
 	h := &Handlers{
